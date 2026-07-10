@@ -1,21 +1,18 @@
 # Remote publish handoff
 
-The code is committed locally on `main`. No provider key is required for the private Mock release.
+The reviewed source is pushed to `main` at commit `3718af2`. No provider key is required for the owner-only Mock release.
 
-## 1. Create and push GitHub repository
+## 1. Complete the GitHub Pages identity gate
 
-Create an empty public repository named `academic-writing-agent` under `k8w98rr595-blip`. Do not initialize it with a README, license, or `.gitignore`, then run:
+The repository exists at `k8w98rr595-blip/academic-writing-agent`, but it was created as **private**. GitHub Pages is disabled on the current account while the repository is private. GitHub requires sudo-mode email verification before changing the visibility.
 
-```powershell
-git remote add origin git@github.com:k8w98rr595-blip/academic-writing-agent.git
-git push -u origin main
-```
+After completing that identity check, change the repository visibility to **public**. The source is already pushed, so do not recreate the repository or force-push it.
 
-In repository Settings → Pages, select **GitHub Actions** as the source. The committed workflow tests both applications, builds the `/academic-writing-agent` static export, scans it for secrets, and deploys Pages.
+In repository **Settings > Pages**, select **GitHub Actions** as the source if it is not enabled automatically. Re-run **Test and deploy GitHub Pages**. The committed workflow tests both applications, builds the `/academic-writing-agent` static export, scans it for secrets, and deploys Pages.
 
 ## 2. Import backend into Railway
 
-Create a Railway project from the GitHub repository and deploy the root `Dockerfile`. Add PostgreSQL and Redis, plus a persistent volume mounted at `/data`. Configure:
+The Railway browser session could not be controlled reliably, so no Railway project was created. After the repository is available to Railway, create a project from it and deploy the root `Dockerfile`. Add PostgreSQL and Redis, plus a persistent volume mounted at `/data`. Configure:
 
 ```text
 APP_ENV=production
@@ -42,4 +39,4 @@ After Railway produces an HTTPS domain:
 3. Re-run the Pages workflow.
 4. Verify unauthenticated API calls return `401`, then complete one non-sensitive Mock workflow before treating production as available.
 
-Identity, CAPTCHA, MFA, provider purchases, API keys, and public-student rollout remain deliberate manual gates.
+Identity, CAPTCHA, MFA, provider purchases, API keys, and public-student rollout remain deliberate manual gates. As of this handoff, the intended Pages URL returns HTTP 404 because Pages is not enabled; do not treat production as deployed until both the Pages URL and Railway health check pass.
