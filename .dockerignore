@@ -1,0 +1,16 @@
+.git
+.github
+node_modules
+apps/web/node_modules
+apps/web/.next
+apps/web/out
+.venv
+__pycache__
+.pytest_cache
+data
+design
+tests
+task_plan.md
+findings.md
+progress.md
+.env*

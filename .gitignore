@@ -1,0 +1,35 @@
+# Node
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Runtime data and secrets
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.sqlite*
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local planning and QA artifacts
+task_plan.md
+findings.md
+progress.md
+design/qa/
