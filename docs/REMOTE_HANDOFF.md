@@ -1,14 +1,14 @@
 # Remote publish handoff
 
-The reviewed source is pushed to `main` at commit `3718af2`. No provider key is required for the owner-only Mock release.
+The reviewed source is pushed to `main` at commit `9058164`. No provider key is required for the owner-only Mock release.
 
-## 1. Complete the GitHub Pages identity gate
+## 1. Enable GitHub Pages
 
-The repository exists at `k8w98rr595-blip/academic-writing-agent`, but it was created as **private**. GitHub Pages is disabled on the current account while the repository is private. GitHub requires sudo-mode email verification before changing the visibility.
+The repository is now **public**. GitHub Actions run `29110385649` passed dependency installation, 23 backend tests, frontend and release-audit tests, typecheck, static build, and secret scanning.
 
-After completing that identity check, change the repository visibility to **public**. The source is already pushed, so do not recreate the repository or force-push it.
+The run stops only because the repository does not yet have a Pages site. In repository **Settings > Pages**, under **Build and deployment > Source**, select **GitHub Actions**. This single setting is required because the official configure-pages action cannot create a Pages site with the default `GITHUB_TOKEN`; automatic enablement requires a separate administration-capable credential.
 
-In repository **Settings > Pages**, select **GitHub Actions** as the source if it is not enabled automatically. Re-run **Test and deploy GitHub Pages**. The committed workflow tests both applications, builds the `/academic-writing-agent` static export, scans it for secrets, and deploys Pages.
+After selecting the source, re-run **Test and deploy GitHub Pages**. The committed workflow builds the `/academic-writing-agent` static export and deploys it.
 
 ## 2. Import backend into Railway
 
