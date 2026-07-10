@@ -32,4 +32,4 @@ Provider keys are server-only. Set `DETECTOR_MODE=dual` after configuring both P
 - Backend: Railway from the root `Dockerfile` and `railway.json`.
 - Database/queue/object storage: local Docker Compose for development; managed PostgreSQL, Redis, and S3-compatible storage for public rollout.
 
-See `docs/ARCHITECTURE.md`, `docs/BENCHMARK.md`, `docs/DEPLOYMENT.md`, `docs/SECURITY.md`, and `docs/PROVIDER_SETUP.md`.
+See `docs/ARCHITECTURE.md`, `docs/BENCHMARK.md`, `docs/DEPLOYMENT.md`, `docs/REMOTE_HANDOFF.md`, `docs/SECURITY.md`, and `docs/PROVIDER_SETUP.md`.
