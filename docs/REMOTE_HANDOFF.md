@@ -40,3 +40,11 @@ After Railway produces an HTTPS domain:
 4. Verify unauthenticated API calls return `401`, then complete one non-sensitive Mock workflow before treating production as available.
 
 Identity, CAPTCHA, MFA, provider purchases, API keys, and public-student rollout remain deliberate manual gates. As of this handoff, the intended Pages URL returns HTTP 404 because Pages is not enabled; do not treat production as deployed until both the Pages URL and Railway health check pass.
+
+Once the Railway domain exists, run the credential-free release audit:
+
+```powershell
+pnpm check:release -- --backend-url https://YOUR-RAILWAY-SERVICE.up.railway.app
+```
+
+Exit code `0` is the deployment acceptance gate. The script never reads or prints GitHub credentials, owner secrets, or provider keys.

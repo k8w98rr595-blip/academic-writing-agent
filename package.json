@@ -6,9 +6,10 @@
   "scripts": {
     "dev": "pnpm --filter @paperlight/web dev",
     "build": "pnpm --filter @paperlight/web build",
-    "test": "pnpm --filter @paperlight/web test",
+    "test": "pnpm --filter @paperlight/web test && node --test scripts/check-remote-release.test.mjs",
     "typecheck": "pnpm --filter @paperlight/web typecheck",
     "build:pages": "pnpm --filter @paperlight/web build",
-    "check:secrets": "node scripts/check-static-secrets.mjs"
+    "check:secrets": "node scripts/check-static-secrets.mjs",
+    "check:release": "node scripts/check-remote-release.mjs"
   }
 }

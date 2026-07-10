@@ -27,3 +27,13 @@ Do not deploy with the local bootstrap password file. Generate production passwo
 ## Managed services
 
 The single-owner mock release can use Railway PostgreSQL and an attached `/data` volume with eager jobs. Before a student pilot, enable Redis/Celery, S3-compatible storage, database backups, shared rate limits, and provider data-processing agreements.
+
+## Credential-free production check
+
+After Pages and Railway are configured, verify the public release without supplying a GitHub or provider token:
+
+```powershell
+pnpm check:release -- --backend-url https://YOUR-RAILWAY-SERVICE.up.railway.app
+```
+
+The check requires a public repository, a successful latest Actions run, HTTP 200 from Pages, Mock provider mode, a configured TOTP owner, and HTTP 401 from the protected documents endpoint. It exits with code `0` only when the complete owner-only Mock release is ready. Use `--json` for machine-readable evidence.
