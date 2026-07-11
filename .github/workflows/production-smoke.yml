@@ -1,0 +1,49 @@
+name: Production smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Pages and owner-only Mock API
+        env:
+          BACKEND_URL: ${{ vars.PAPERLIGHT_API_BASE_URL }}
+          PAGES_URL: https://k8w98rr595-blip.github.io/academic-writing-agent
+        run: |
+          set -euo pipefail
+          test -n "$BACKEND_URL"
+
+          retry=(--silent --show-error --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 15 --max-time 45)
+
+          health="$(curl "${retry[@]}" --fail "$BACKEND_URL/api/health")"
+          jq -e '.ok == true and .providerMode.detector == "mock" and .providerMode.rewrite == "mock"' <<<"$health" >/dev/null
+
+          auth="$(curl "${retry[@]}" --fail "$BACKEND_URL/api/v1/auth/status")"
+          jq -e '.configured == true and .requiresTotp == true' <<<"$auth" >/dev/null
+
+          protected_status="$(curl "${retry[@]}" --output /dev/null --write-out '%{http_code}' "$BACKEND_URL/api/v1/documents")"
+          test "$protected_status" = "401"
+
+          config="$(curl "${retry[@]}" --fail "$PAGES_URL/config.js")"
+          grep -F "$BACKEND_URL" <<<"$config" >/dev/null
+          if grep -F 'paperlight-backend.invalid' <<<"$config" >/dev/null; then
+            echo 'Pages still contains the placeholder backend URL.' >&2
+            exit 1
+          fi
+
+          cors_headers="$(mktemp)"
+          curl "${retry[@]}" --fail --request OPTIONS \
+            --header "Origin: https://k8w98rr595-blip.github.io" \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: authorization,content-type' \
+            --dump-header "$cors_headers" \
+            --output /dev/null \
+            "$BACKEND_URL/api/v1/auth/login"
+          grep -i '^access-control-allow-origin: https://k8w98rr595-blip.github.io' "$cors_headers" >/dev/null
+
+          echo 'Production smoke passed: Pages is wired to the owner-only Mock API.'
