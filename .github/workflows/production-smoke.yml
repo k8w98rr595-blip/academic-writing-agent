@@ -10,10 +10,11 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Verify Pages and owner-only Mock API
+      - name: Verify Pages and owner-only API
         env:
           BACKEND_URL: ${{ vars.PAPERLIGHT_API_BASE_URL }}
           PAGES_URL: https://k8w98rr595-blip.github.io/academic-writing-agent
+          EXPECTED_REWRITE_MODE: ${{ vars.PAPERLIGHT_EXPECTED_REWRITE_MODE || 'mock' }}
         run: |
           set -euo pipefail
           test -n "$BACKEND_URL"
@@ -21,7 +22,7 @@ jobs:
           retry=(--silent --show-error --retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 15 --max-time 45)
 
           health="$(curl "${retry[@]}" --fail "$BACKEND_URL/api/health")"
-          jq -e '.ok == true and .providerMode.detector == "mock" and .providerMode.rewrite == "mock"' <<<"$health" >/dev/null
+          jq -e --arg rewrite "$EXPECTED_REWRITE_MODE" '.ok == true and .providerMode.detector == "mock" and .providerMode.rewrite == $rewrite' <<<"$health" >/dev/null
 
           auth="$(curl "${retry[@]}" --fail "$BACKEND_URL/api/v1/auth/status")"
           jq -e '.configured == true and .requiresTotp == true' <<<"$auth" >/dev/null
@@ -46,4 +47,4 @@ jobs:
             "$BACKEND_URL/api/v1/auth/login"
           grep -i '^access-control-allow-origin: https://k8w98rr595-blip.github.io' "$cors_headers" >/dev/null
 
-          echo 'Production smoke passed: Pages is wired to the owner-only Mock API.'
+          echo "Production smoke passed: detector=mock rewrite=$EXPECTED_REWRITE_MODE."

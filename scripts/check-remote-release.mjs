@@ -4,7 +4,8 @@ const DEFAULTS = {
   repository: "k8w98rr595-blip/academic-writing-agent",
   pagesUrl: "https://k8w98rr595-blip.github.io/academic-writing-agent/",
   backendUrl: "",
-  expectedProviderMode: "mock",
+  expectedDetectorMode: "mock",
+  expectedRewriteMode: "mock",
   json: false,
 };
 
@@ -30,7 +31,15 @@ export function parseArgs(argv) {
       options.backendUrl = takeValue(argv, index, flag);
       index += 1;
     } else if (flag === "--expected-provider-mode") {
-      options.expectedProviderMode = takeValue(argv, index, flag);
+      const mode = takeValue(argv, index, flag);
+      options.expectedDetectorMode = mode;
+      options.expectedRewriteMode = mode;
+      index += 1;
+    } else if (flag === "--expected-detector-mode") {
+      options.expectedDetectorMode = takeValue(argv, index, flag);
+      index += 1;
+    } else if (flag === "--expected-rewrite-mode") {
+      options.expectedRewriteMode = takeValue(argv, index, flag);
       index += 1;
     } else if (flag === "--json") {
       options.json = true;
@@ -160,8 +169,8 @@ export async function runReleaseCheck(options, { fetchImpl = fetch } = {}) {
     const documentsResponse = await request(fetchImpl, endpoint(options.backendUrl, "/api/v1/documents"));
     const providerMode = healthResponse.payload?.providerMode;
     const providerModeOk =
-      providerMode?.detector === options.expectedProviderMode &&
-      providerMode?.rewrite === options.expectedProviderMode;
+      providerMode?.detector === options.expectedDetectorMode &&
+      providerMode?.rewrite === options.expectedRewriteMode;
     const healthOk = healthResponse.status === 200 && healthResponse.payload?.ok === true && providerModeOk;
     const authOk =
       authResponse.status === 200 &&
@@ -239,7 +248,9 @@ function helpText() {
     "  --repo owner/name                 GitHub repository",
     "  --pages-url https://...           GitHub Pages URL",
     "  --backend-url https://...         Railway service base URL",
-    "  --expected-provider-mode mock     Expected detector and rewrite mode",
+    "  --expected-provider-mode mock     Expected detector and rewrite mode (legacy shorthand)",
+    "  --expected-detector-mode mock     Expected detector mode",
+    "  --expected-rewrite-mode deepseek  Expected rewrite mode",
     "  --json                            Emit JSON",
     "  --help                            Show this help",
   ].join("\n");

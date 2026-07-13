@@ -37,6 +37,9 @@ export type Patch = {
   protectedStatus: string;
   status: "pending" | "accepted" | "rejected";
   isMock?: boolean;
+  provider?: string;
+  modelVersion?: string;
+  validatorModelVersion?: string | null;
   createdAt?: string;
 };
 

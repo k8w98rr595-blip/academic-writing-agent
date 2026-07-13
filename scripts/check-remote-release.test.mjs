@@ -64,3 +64,37 @@ test("public Pages and hardened Mock backend produce a ready release", async () 
   assert.equal(result.productionReady, true);
   assert.deepEqual(result.blockers, []);
 });
+
+test("detector and rewrite modes can be audited independently", async () => {
+  const options = parseArgs([
+    "--backend-url",
+    "https://paperlight.example.com",
+    "--expected-detector-mode",
+    "mock",
+    "--expected-rewrite-mode",
+    "deepseek",
+  ]);
+  const result = await runReleaseCheck(options, {
+    fetchImpl: routeFetch({
+      "https://api.github.com/repos/k8w98rr595-blip/academic-writing-agent": response(200, {
+        private: false,
+        visibility: "public",
+      }),
+      "https://api.github.com/repos/k8w98rr595-blip/academic-writing-agent/actions/runs?per_page=1": response(200, {
+        workflow_runs: [{ conclusion: "success", html_url: "https://github.com/example/run" }],
+      }),
+      "https://k8w98rr595-blip.github.io/academic-writing-agent/": response(200),
+      "https://paperlight.example.com/api/health": response(200, {
+        ok: true,
+        providerMode: { detector: "mock", rewrite: "deepseek" },
+      }),
+      "https://paperlight.example.com/api/v1/auth/status": response(200, {
+        configured: true,
+        requiresTotp: true,
+      }),
+      "https://paperlight.example.com/api/v1/documents": response(401),
+    }),
+  });
+  assert.equal(result.backend.ok, true);
+  assert.equal(result.productionReady, true);
+});

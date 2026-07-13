@@ -15,6 +15,7 @@ from services.api.app.documents import DOCX_MIME, MAX_UNCOMPRESSED_BYTES, valida
 from services.api.app.models import Document
 from services.api.app.providers.detectors import _global_windows_to_paragraphs, run_detection
 from services.api.app.providers import detectors as detector_module
+from services.api.app.providers import rewriters as rewriter_module
 from services.api.app.providers.http_client import post_json_with_retry
 from services.api.app.providers.rewriters import _mock_rewrite, propose_rewrite
 from services.api.app.security import SlidingWindowLimiter
@@ -81,6 +82,141 @@ def test_real_provider_modes_fail_closed_without_credentials(monkeypatch: pytest
 
     monkeypatch.setenv("DETECTOR_MODE", "mock")
     monkeypatch.setenv("REWRITE_MODE", "mock")
+    get_settings.cache_clear()
+
+
+def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.MonkeyPatch):
+    calls: list[dict] = []
+    responses = [
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"revisedText":"NASA evidence indicates that the measured rate remained 42% [3].","reason":"Made the claim more direct."}'
+                    }
+                }
+            ]
+        },
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"approved":true,"meaningPreserved":true,"factsAdded":false,"protectedContentPreserved":true,"issues":[]}'
+                    }
+                }
+            ]
+        },
+    ]
+
+    async def fake_post(url: str, *, headers: dict, payload: dict, timeout_seconds: int):
+        calls.append({"url": url, "hasBearer": headers.get("Authorization", "").startswith("Bearer "), "payload": payload})
+        return httpx.Response(200, json=responses.pop(0), request=httpx.Request("POST", url))
+
+    monkeypatch.setenv("REWRITE_MODE", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "contract-test-key")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+    monkeypatch.setenv("DEEPSEEK_VALIDATOR_MODEL", "deepseek-v4-flash")
+    monkeypatch.setattr(rewriter_module, "post_json_with_retry", fake_post)
+    get_settings.cache_clear()
+
+    result = asyncio.run(
+        propose_rewrite(
+            "Make the claim more direct without changing evidence.",
+            "p_deepseek",
+            "It is important to note that NASA measured a rate of 42% [3].",
+        )
+    )
+
+    assert result["isMock"] is False
+    assert result["provider"] == "DeepSeek"
+    assert result["modelVersion"] == "deepseek-v4-pro"
+    assert result["validatorModelVersion"] == "deepseek-v4-flash"
+    assert len(calls) == 2
+    assert calls[0]["url"] == "https://api.deepseek.com/chat/completions"
+    assert calls[0]["hasBearer"] is True
+    assert calls[0]["payload"]["model"] == "deepseek-v4-pro"
+    assert calls[0]["payload"]["thinking"] == {"type": "enabled"}
+    assert calls[0]["payload"]["reasoning_effort"] == "high"
+    assert calls[0]["payload"]["response_format"] == {"type": "json_object"}
+    assert calls[1]["payload"]["model"] == "deepseek-v4-flash"
+    assert calls[1]["payload"]["thinking"] == {"type": "disabled"}
+    assert "reasoning_effort" not in calls[1]["payload"]
+
+    monkeypatch.setenv("REWRITE_MODE", "mock")
+    get_settings.cache_clear()
+
+
+def test_deepseek_validator_rejects_semantic_drift(monkeypatch: pytest.MonkeyPatch):
+    responses = [
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"revisedText":"The evidence proves the policy always succeeds.","reason":"Strengthened the claim."}'
+                    }
+                }
+            ]
+        },
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"approved":false,"meaningPreserved":false,"factsAdded":true,"protectedContentPreserved":true,"issues":["certainty changed"]}'
+                    }
+                }
+            ]
+        },
+    ]
+
+    async def fake_post(url: str, **_: object):
+        return httpx.Response(200, json=responses.pop(0), request=httpx.Request("POST", url))
+
+    monkeypatch.setenv("REWRITE_MODE", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "contract-test-key")
+    monkeypatch.setattr(rewriter_module, "post_json_with_retry", fake_post)
+    get_settings.cache_clear()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(propose_rewrite("Improve clarity", "p", "The evidence suggests the policy may help."))
+    assert error.value.status_code == 422
+    assert error.value.detail == "The proposed revision did not pass semantic safety validation"
+
+    monkeypatch.setenv("REWRITE_MODE", "mock")
+    get_settings.cache_clear()
+
+
+def test_deepseek_authentication_error_is_sanitized(monkeypatch: pytest.MonkeyPatch):
+    async def unauthorized(url: str, **_: object):
+        return httpx.Response(
+            401,
+            json={"error": {"message": "provider detail must not escape"}},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setenv("REWRITE_MODE", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "contract-test-key")
+    monkeypatch.setattr(rewriter_module, "post_json_with_retry", unauthorized)
+    get_settings.cache_clear()
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(propose_rewrite("Improve clarity", "p", "The evidence suggests the policy may help."))
+    assert error.value.status_code == 503
+    assert error.value.detail == "DeepSeek authentication failed; verify the server-side API key"
+    assert "provider detail" not in error.value.detail
+
+    monkeypatch.setenv("REWRITE_MODE", "mock")
+    get_settings.cache_clear()
+
+
+def test_production_deepseek_rejects_an_untrusted_api_host(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("REWRITE_MODE", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://attacker.invalid")
+    get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="official HTTPS API host"):
+        get_settings()
+
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("REWRITE_MODE", "mock")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     get_settings.cache_clear()
 
 

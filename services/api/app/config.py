@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -104,4 +105,19 @@ def get_settings() -> Settings:
     settings.object_storage_dir.mkdir(parents=True, exist_ok=True)
     if settings.is_production and "*" in settings.allowed_origins:
         raise RuntimeError("Production CORS must not allow every origin")
+    if settings.is_production and settings.rewrite_mode == "deepseek":
+        deepseek_url = urlsplit(settings.deepseek_base_url)
+        if (
+            deepseek_url.scheme != "https"
+            or deepseek_url.hostname != "api.deepseek.com"
+            or deepseek_url.port not in {None, 443}
+            or deepseek_url.username
+            or deepseek_url.password
+            or deepseek_url.query
+            or deepseek_url.fragment
+            or deepseek_url.path.rstrip("/") not in {"", "/v1"}
+        ):
+            raise RuntimeError("Production DeepSeek base URL must use the official HTTPS API host")
+        if settings.deepseek_model != "deepseek-v4-pro" or settings.deepseek_validator_model != "deepseek-v4-flash":
+            raise RuntimeError("Production DeepSeek mode requires the approved V4 Pro and V4 Flash model pair")
     return settings

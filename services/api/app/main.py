@@ -297,7 +297,17 @@ async def rewrite_message(
         protected_status=proposal["protectedStatus"],
     )
     db.add(patch)
-    audit(db, owner, "patch.proposed", document.id, patchId=patch.id, mock=proposal["isMock"])
+    audit(
+        db,
+        owner,
+        "patch.proposed",
+        document.id,
+        patchId=patch.id,
+        mock=proposal["isMock"],
+        provider=proposal["provider"],
+        model=proposal["modelVersion"],
+        validatorModel=proposal["validatorModelVersion"],
+    )
     db.commit()
     return {
         "patch": {
@@ -310,6 +320,9 @@ async def rewrite_message(
             "protectedStatus": patch.protected_status,
             "status": patch.status,
             "isMock": proposal["isMock"],
+            "provider": proposal["provider"],
+            "modelVersion": proposal["modelVersion"],
+            "validatorModelVersion": proposal["validatorModelVersion"],
         }
     }
 

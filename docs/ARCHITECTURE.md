@@ -15,7 +15,8 @@ flowchart LR
   W --> DP["Mock Primary + Mock Review"]
   W -. "credential-gated" .-> PG["Pangram"]
   W -. "credential-gated" .-> CL["Copyleaks"]
-  A -. "credential-gated" .-> DS["DeepSeek rewrite adapter"]
+  A -. "credential-gated" .-> DS["DeepSeek V4-Pro rewrite"]
+  DS --> DV["DeepSeek V4-Flash semantic validation"]
 ```
 
 文稿正文只进入受认证 API。前端静态资源可以公开加载，但浏览器没有后端会话就不能读取、创建或修改文稿。所有分析和补丁绑定不可变版本；用户修改后旧证据立即标记为过期。
@@ -24,7 +25,7 @@ flowchart LR
 
 - 文稿：800–5,000 个英文单词，稳定段落 ID，默认七天到期。
 - 检测：双 Provider 结果、版本号、概率区间、句子范围和明确免责声明；Mock 永远显示演示身份。
-- 改写：模型只返回结构化补丁，不直接覆盖正文；数字、比例、引文、引用标记、URL、缩写和专有项受保护。
+- 改写：V4-Pro 只返回结构化补丁，V4-Flash 独立检查语义漂移；模型不直接覆盖正文，数字、比例、引文、引用标记、URL、缩写和专有项仍由服务端规则保护。
 - 版本：手工保存、补丁接受和恢复都创建新版本，不覆盖历史。
 - 文件：DOCX 经过文件名、MIME、ZIP、展开体积、条目、宏、路径和外部关系检查。
 - 删除：文档树、任务和对象前缀同步清除；排队任务发现记录已删除时自动退出。

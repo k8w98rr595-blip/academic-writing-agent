@@ -24,7 +24,7 @@ The initializer never replaces an existing `.env.local` unless `--force` is supp
 
 ## Provider configuration
 
-Provider keys are server-only. Set `DETECTOR_MODE=dual` after configuring both Pangram and Copyleaks, or `REWRITE_MODE=deepseek` after configuring DeepSeek. The app refuses a real mode whose credentials are missing.
+Provider keys are server-only. Set `DETECTOR_MODE=dual` after configuring both Pangram and Copyleaks, or `REWRITE_MODE=deepseek` after configuring DeepSeek. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative. The app refuses a real mode whose credentials are missing.
 
 ## Deployment
 
