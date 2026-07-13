@@ -1,50 +1,48 @@
-# Remote publish handoff
+# Production deployment handoff
 
-The reviewed source is pushed to `main` at commit `9058164`. No provider key is required for the owner-only Mock release.
+The owner-only Mock release is deployed from `main`. It does not require a DeepSeek, Pangram, or Copyleaks key.
 
-## 1. Enable GitHub Pages
+## Live services
 
-The repository is now **public**. GitHub Actions run `29110385649` passed dependency installation, 23 backend tests, frontend and release-audit tests, typecheck, static build, and secret scanning.
+- Frontend: <https://k8w98rr595-blip.github.io/academic-writing-agent/>
+- Backend health: <https://api-production-840c.up.railway.app/api/health>
+- GitHub repository: <https://github.com/k8w98rr595-blip/academic-writing-agent>
+- Railway project: `academic-writing-agent`
 
-The run stops only because the repository does not yet have a Pages site. In repository **Settings > Pages**, under **Build and deployment > Source**, select **GitHub Actions**. This single setting is required because the official configure-pages action cannot create a Pages site with the default `GITHUB_TOKEN`; automatic enablement requires a separate administration-capable credential.
+GitHub Pages uses the `/academic-writing-agent` base path and the repository Actions variable `PAPERLIGHT_API_BASE_URL` to generate `config.js`. Railway contains the `api`, `Postgres`, and `Redis` services; the API has a persistent volume mounted at `/data`.
 
-After selecting the source, re-run **Test and deploy GitHub Pages**. The committed workflow builds the `/academic-writing-agent` static export and deploys it.
+## Verified production state
 
-## 2. Import backend into Railway
+The following checks have passed:
 
-The Railway browser session could not be controlled reliably, so no Railway project was created. After the repository is available to Railway, create a project from it and deploy the root `Dockerfile`. Add PostgreSQL and Redis, plus a persistent volume mounted at `/data`. Configure:
+- Pages and its static assets return HTTP 200, and `config.js` contains the live Railway URL rather than the placeholder.
+- The Pages build/deploy workflow completed successfully for commit `3456dea` (run `29152023013`).
+- The credential-free production smoke workflow completed successfully (run `29152031934`). It verified Mock/Mock provider mode, configured TOTP owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
+- A production owner flow completed with non-sensitive generated text: login, 1,351-word document creation, two-provider Mock analysis, Mock patch generation, patch acceptance, stale-analysis marking, DOCX export, document deletion, and logout. The export began with the expected ZIP/DOCX signature, and the test document was deleted with HTTP 204.
+- Local verification covers 25 backend tests, 2 frontend tests, 3 release-audit tests, type checking, the static Pages build, and the container entrypoint shell syntax.
 
-```text
-APP_ENV=production
-ALLOWED_ORIGINS=https://k8w98rr595-blip.github.io
-OBJECT_STORAGE_MODE=local
-OBJECT_STORAGE_DIR=/data/objects
-JOB_MODE=eager
-DETECTOR_MODE=mock
-REWRITE_MODE=mock
-REQUIRE_TOTP=1
-COOKIE_SECURE=1
-```
+## Production configuration
 
-Connect `DATABASE_URL` to the Railway PostgreSQL service. The single-owner Mock release does not require Redis at runtime while `JOB_MODE=eager`; Redis is already supported for the later Celery worker split.
+The API runs with production CORS, HTTPS-only owner access, TOTP, eager jobs, local volume-backed object storage, and explicitly labeled Mock detector/rewrite providers. `DATABASE_URL` and `REDIS_URL` reference the managed Railway services. No provider key is present in the frontend, Git repository, documentation, or knowledge vault.
 
-Copy `OWNER_EMAIL`, `OWNER_PASSWORD_HASH`, and `OWNER_TOTP_SECRET` from the ignored `data/railway-owner.txt` created by `scripts/prepare_railway_secrets.py`. Never copy the login password or TOTP URI into Railway variables.
+The login material is only in the ignored local handoff file created for the owner. Do not copy the login password or TOTP URI into Git, GitHub variables, logs, or documentation.
 
-## 3. Connect Pages to Railway
+## Operations
 
-After Railway produces an HTTPS domain:
-
-1. Confirm `https://YOUR-DOMAIN/api/health` returns `ok: true` and both provider modes are `mock`.
-2. Add the repository Actions variable `PAPERLIGHT_API_BASE_URL=https://YOUR-DOMAIN`.
-3. Re-run the Pages workflow.
-4. Verify unauthenticated API calls return `401`, then complete one non-sensitive Mock workflow before treating production as available.
-
-Identity, CAPTCHA, MFA, provider purchases, API keys, and public-student rollout remain deliberate manual gates. As of this handoff, the intended Pages URL returns HTTP 404 because Pages is not enabled; do not treat production as deployed until both the Pages URL and Railway health check pass.
-
-Once the Railway domain exists, run the credential-free release audit:
+Every push to `main` runs tests, builds the static export, scans it for key-like values, and publishes Pages. Railway is connected to the same repository; an explicit deploy can also be started from the project root with:
 
 ```powershell
-pnpm check:release -- --backend-url https://YOUR-RAILWAY-SERVICE.up.railway.app
+railway up --service api --detach
 ```
 
-Exit code `0` is the deployment acceptance gate. The script never reads or prints GitHub credentials, owner secrets, or provider keys.
+Run the credential-free audit with:
+
+```powershell
+pnpm check:release --backend-url https://api-production-840c.up.railway.app --json
+```
+
+The manual `Production smoke` workflow is the remote acceptance check when the local network cannot route directly to the Railway edge.
+
+## Deliberate future gates
+
+DeepSeek, Pangram, and Copyleaks credentials remain unset. Real provider claims, a Turnitin comparison, public registration, payments, refunds, student uploads, provider data-processing agreements, retention guarantees, benchmark calibration, and China-facing compliance are not part of this owner-only Mock release and must be completed before public rollout.

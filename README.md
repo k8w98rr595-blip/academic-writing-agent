@@ -28,8 +28,12 @@ Provider keys are server-only. Set `DETECTOR_MODE=dual` after configuring both P
 
 ## Deployment
 
-- Frontend: GitHub Pages from `.github/workflows/pages.yml`.
-- Backend: Railway from the root `Dockerfile` and `railway.json`.
+- Live owner-only Mock frontend: <https://k8w98rr595-blip.github.io/academic-writing-agent/>.
+- Live Mock API: <https://api-production-840c.up.railway.app/api/health>.
+- Frontend: GitHub Pages from `.github/workflows/pages.yml`; `.github/workflows/production-smoke.yml` verifies the production wiring without credentials.
+- Backend: Railway from the root `Dockerfile` and `railway.json`, with managed PostgreSQL, Redis, and an attached `/data` volume.
 - Database/queue/object storage: local Docker Compose for development; managed PostgreSQL, Redis, and S3-compatible storage for public rollout.
+
+This deployment remains private to the configured owner. Real detector/rewrite providers, public registration, payments, and student rollout are intentionally disabled until their separate evaluation and compliance gates are complete.
 
 See `docs/ARCHITECTURE.md`, `docs/BENCHMARK.md`, `docs/DEPLOYMENT.md`, `docs/REMOTE_HANDOFF.md`, `docs/SECURITY.md`, and `docs/PROVIDER_SETUP.md`.

@@ -6,7 +6,7 @@ The web app uses a static Next.js export. The Pages workflow sets:
 
 ```text
 NEXT_PUBLIC_BASE_PATH=/academic-writing-agent
-NEXT_PUBLIC_API_BASE_URL=https://YOUR-RAILWAY-SERVICE.up.railway.app
+NEXT_PUBLIC_API_BASE_URL=https://api-production-840c.up.railway.app
 ```
 
 No provider secret is accepted by the frontend build. `scripts/check-static-secrets.mjs` fails the build if a key-like value appears in `apps/web/out`.
@@ -33,7 +33,9 @@ The single-owner mock release can use Railway PostgreSQL and an attached `/data`
 After Pages and Railway are configured, verify the public release without supplying a GitHub or provider token:
 
 ```powershell
-pnpm check:release -- --backend-url https://YOUR-RAILWAY-SERVICE.up.railway.app
+pnpm check:release --backend-url https://api-production-840c.up.railway.app
 ```
 
 The check requires a public repository, a successful latest Actions run, HTTP 200 from Pages, Mock provider mode, a configured TOTP owner, and HTTP 401 from the protected documents endpoint. It exits with code `0` only when the complete owner-only Mock release is ready. Use `--json` for machine-readable evidence.
+
+The manual `Production smoke` workflow provides the same credential-free production boundary check from a GitHub-hosted runner and also verifies that Pages contains the Railway URL and the expected CORS origin.
