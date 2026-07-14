@@ -17,13 +17,15 @@ The following checks have passed:
 
 - Pages and its static assets return HTTP 200, and `config.js` contains the live Railway URL rather than the placeholder.
 - The Pages build/deploy workflow completed successfully for the DeepSeek integration commit `9e900be` (run `29252532296`).
-- The credential-free production smoke workflow verifies Mock detector mode, DeepSeek rewrite mode, configured TOTP owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
+- The credential-free production smoke workflow verifies Mock detector mode, DeepSeek rewrite mode, configured owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
 - A production owner flow completed with non-sensitive generated text: login, document creation, DeepSeek rewrite session, V4 Pro patch generation, V4 Flash semantic validation, patch acceptance, document deletion, and logout. The returned metadata was `DeepSeek`, `deepseek-v4-pro`, `deepseek-v4-flash`, and `isMock=false`; the test document was deleted with HTTP 204.
 - Local verification covers 29 backend tests, 2 frontend tests, 4 release-audit tests, type checking, the static Pages build, static secret scanning, dependency auditing, and the container entrypoint shell syntax.
 
 ## Production configuration
 
-The API runs with production CORS, HTTPS-only owner access, TOTP, eager jobs, local volume-backed object storage, an explicitly labeled Mock detector, and server-only DeepSeek rewrite. `DATABASE_URL` and `REDIS_URL` reference the managed Railway services. No provider key is present in the frontend, Git repository, documentation, or knowledge vault.
+The API runs with production CORS, HTTPS-only owner access, eager jobs, local volume-backed object storage, an explicitly labeled Mock detector, and server-only DeepSeek rewrite. `DATABASE_URL` and `REDIS_URL` reference the managed Railway services. No provider key is present in the frontend, Git repository, documentation, or knowledge vault.
+
+TOTP is temporarily disabled in production with `REQUIRE_TOTP=0` as of 2026-07-14. Password-only login and logout were verified against the production API. The existing TOTP secret remains configured so the second factor can be restored by setting `REQUIRE_TOTP=1` and redeploying; until then, owner access has reduced account protection.
 
 The login material is only in the ignored local handoff file created for the owner. Do not copy the login password or TOTP URI into Git, GitHub variables, logs, or documentation.
 
