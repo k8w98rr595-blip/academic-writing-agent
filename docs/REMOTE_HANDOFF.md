@@ -16,10 +16,10 @@ GitHub Pages uses the `/academic-writing-agent` base path and the repository Act
 The following checks have passed:
 
 - Pages and its static assets return HTTP 200, and `config.js` contains the live Railway URL rather than the placeholder.
-- The Pages build/deploy workflow completed successfully for the DeepSeek integration commit `9e900be` (run `29252532296`).
+- The credential-free Production smoke completed successfully for revision `795e6d4` (run `29355017630`, job `87160359090`). The 2026-07-15 hardening release must receive a new successful Pages and Railway deployment check after it is pushed.
 - The credential-free production smoke workflow verifies Mock detector mode, DeepSeek rewrite mode, configured owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
-- A production owner flow completed with non-sensitive generated text: login, document creation, DeepSeek rewrite session, V4 Pro patch generation, V4 Flash semantic validation, patch acceptance, document deletion, and logout. The returned metadata was `DeepSeek`, `deepseek-v4-pro`, `deepseek-v4-flash`, and `isMock=false`; the test document was deleted with HTTP 204.
-- Local verification covers 29 backend tests, 2 frontend tests, 4 release-audit tests, type checking, the static Pages build, static secret scanning, dependency auditing, and the container entrypoint shell syntax.
+- An earlier production owner flow completed with non-sensitive generated text: login, document creation, DeepSeek rewrite, semantic validation, patch acceptance, document deletion, and logout. The 2026-07-15 final acceptance flow is recorded separately and must be repeated after the hardening deployment before the current release is marked owner-ready.
+- Current local verification covers 37 backend/security tests, 2 frontend tests, 4 release-audit tests, type checking, the static Pages build, and expanded static secret scanning.
 
 ## Production configuration
 
@@ -27,7 +27,9 @@ The API runs with production CORS, HTTPS-only owner access, eager jobs, local vo
 
 TOTP is temporarily disabled in production with `REQUIRE_TOTP=0` as of 2026-07-14. Password-only login and logout were verified against the production API. The existing TOTP secret remains configured so the second factor can be restored by setting `REQUIRE_TOTP=1` and redeploying; until then, owner access has reduced account protection.
 
-The login material is only in the ignored local handoff file created for the owner. Do not copy the login password or TOTP URI into Git, GitHub variables, logs, or documentation.
+Local handoff files are ignored and untracked. Their ACL inheritance is disabled and access is restricted to the current user, SYSTEM, and Administrators, but they remain plaintext. Move the values to the owner's password manager, rotate the related credentials, and delete the handoff files only after explicit owner confirmation. Do not copy login or TOTP material into Git, GitHub variables, logs, or documentation.
+
+Operational custody, rotation, TOTP restoration, and provider budget thresholds are defined in [Cost alerts and credential custody runbook](COST_AND_CREDENTIALS_RUNBOOK.md). The reproducible acceptance evidence and current blockers are in [Production acceptance record — 2026-07-15](PRODUCTION_ACCEPTANCE_2026-07-15.md).
 
 ## Operations
 

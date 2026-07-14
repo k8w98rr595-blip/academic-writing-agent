@@ -7,6 +7,8 @@ from pathlib import Path
 import pyotp
 from argon2 import PasswordHasher
 
+from secure_secret_file import secure_write_text
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -24,7 +26,8 @@ def main() -> None:
     totp_secret = pyotp.random_base32()
     password_hash = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2).hash(password)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
+    secure_write_text(
+        target,
         "Paperlight Railway owner handoff\n"
         "This ignored file is not part of Git. Save the login values in a password manager, configure the Railway variables, then delete it.\n\n"
         f"OWNER_EMAIL={email}\n"
@@ -33,7 +36,6 @@ def main() -> None:
         "REQUIRE_TOTP=1\n\n"
         f"Login password: {password}\n"
         f"TOTP URI: {pyotp.TOTP(totp_secret).provisioning_uri(name=email, issuer_name='Paperlight')}\n",
-        encoding="utf-8",
     )
     print(f"Created ignored Railway owner handoff: {target}")
     print("Secret values were not printed.")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import collections
 import datetime as dt
+import getpass
 import json
 import re
 import sys
@@ -37,15 +38,6 @@ def synthetic_paper() -> str:
     if len(re.findall(r"\b[\w’'-]+\b", text)) < 800:
         raise RuntimeError("Synthetic paper unexpectedly fell below 800 words")
     return text
-
-
-def load_owner_handoff(path: Path) -> tuple[str, str]:
-    raw = path.read_text(encoding="utf-8")
-    email = re.search(r"(?m)^OWNER_EMAIL=(.+)$", raw)
-    password = re.search(r"(?m)^Login password: (.+)$", raw)
-    if not email or not password:
-        raise RuntimeError("Owner handoff is missing required login fields")
-    return email.group(1).strip(), password.group(1).strip()
 
 
 class ApiClient:
@@ -119,7 +111,7 @@ def assert_static_pages(pages_url: str, api_url: str, results: dict) -> None:
     checked = 0
     for url in list(dict.fromkeys(same_origin_assets))[:12]:
         with urllib.request.urlopen(url, timeout=30) as response:
-            payload = response.read()
+            payload = response.read(64 * 1024)
             if response.status != 200 or not payload:
                 raise RuntimeError(f"Static asset failed: {url}")
             if url == config_url and api_url.encode("utf-8") not in payload:
@@ -136,7 +128,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run a destructive, synthetic-only Paperlight production acceptance test")
     parser.add_argument("--api-url", default="https://api-production-840c.up.railway.app")
     parser.add_argument("--pages-url", default="https://k8w98rr595-blip.github.io/academic-writing-agent")
-    parser.add_argument("--owner-handoff", required=True)
+    parser.add_argument("--owner-email", required=True)
     parser.add_argument("--json-output")
     args = parser.parse_args()
 
@@ -151,7 +143,8 @@ def main() -> int:
     rewrite_id = ""
     patch_id = ""
     analysis_job_id = ""
-    email, password = load_owner_handoff(Path(args.owner_handoff))
+    email = args.owner_email.strip()
+    password = getpass.getpass("Owner password (not echoed or stored): ")
 
     try:
         assert_static_pages(args.pages_url, args.api_url, steps)

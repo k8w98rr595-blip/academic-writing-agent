@@ -21,6 +21,22 @@ from .models import AuditEvent, SessionRecord
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 
+AUDIT_DETAIL_ALLOWLIST = {
+    "analysisId",
+    "ipHash",
+    "mock",
+    "model",
+    "patchId",
+    "provider",
+    "providerMode",
+    "restoredFrom",
+    "rewriteSessionId",
+    "source",
+    "validatorModel",
+    "versionId",
+    "wordCount",
+}
+
 
 def hash_password(password: str) -> str:
     return password_hasher.hash(password)
@@ -76,8 +92,14 @@ def client_key(request: Request) -> str:
 
 
 def audit(db: Session, actor: str, action: str, resource_id: str = "", **details) -> None:
-    safe_details = {key: value for key, value in details.items() if key not in {"text", "token", "password", "content"}}
+    safe_details = {key: value for key, value in details.items() if key in AUDIT_DETAIL_ALLOWLIST}
     db.add(AuditEvent(id=f"audit_{secrets.token_hex(12)}", actor=actor, action=action, resource_id=resource_id, details=safe_details))
+
+
+def owner_session_identity() -> str:
+    settings = get_settings()
+    password_version = hashlib.sha256(settings.owner_password_hash.encode("utf-8")).hexdigest()[:16]
+    return f"{settings.owner_email}#{password_version}"
 
 
 def create_session(db: Session, owner_email: str) -> tuple[str, datetime]:
@@ -87,7 +109,7 @@ def create_session(db: Session, owner_email: str) -> tuple[str, datetime]:
     record = SessionRecord(
         id=f"session_{secrets.token_hex(12)}",
         token_hash=token_hash(token),
-        owner_email=owner_email,
+        owner_email=owner_session_identity(),
         expires_at=expires_at,
     )
     db.add(record)
@@ -128,8 +150,9 @@ def current_owner(
     session = db.scalar(select(SessionRecord).where(SessionRecord.token_hash == token_hash(raw_token)))
     if not session or session.expires_at <= utcnow():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
-    if session.owner_email != get_settings().owner_email:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    settings = get_settings()
+    if session.owner_email != owner_session_identity():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     session.last_seen_at = utcnow()
     db.commit()
-    return session.owner_email
+    return settings.owner_email

@@ -7,6 +7,8 @@ from pathlib import Path
 import pyotp
 from argon2 import PasswordHasher
 
+from secure_secret_file import secure_write_text
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -34,7 +36,7 @@ def main() -> None:
     for line in example.splitlines():
         key = line.split("=", 1)[0] if "=" in line else ""
         output.append(f"{key}={values[key]}" if key in values else line)
-    env_file.write_text("\n".join(output) + "\n", encoding="utf-8")
+    secure_write_text(env_file, "\n".join(output) + "\n")
     data_dir = root / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     bootstrap = (
@@ -46,7 +48,7 @@ def main() -> None:
         f"TOTP URI: {pyotp.TOTP(totp_secret).provisioning_uri(name=email, issuer_name='Paperlight Local')}\n"
     )
     credentials = data_dir / "bootstrap-owner.txt"
-    credentials.write_text(bootstrap, encoding="utf-8")
+    secure_write_text(credentials, bootstrap)
     print(f"Created ignored local configuration: {env_file}")
     print(f"Created ignored owner handoff: {credentials}")
     print("Secret values were not printed.")

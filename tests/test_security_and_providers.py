@@ -12,13 +12,15 @@ from fastapi.testclient import TestClient
 from services.api.app.config import get_settings
 from services.api.app.database import session_scope
 from services.api.app.documents import DOCX_MIME, MAX_UNCOMPRESSED_BYTES, validate_docx_upload
-from services.api.app.models import Document
+from services.api.app.main import app
+from services.api.app.models import AuditEvent, Document
 from services.api.app.providers.detectors import _global_windows_to_paragraphs, run_detection
 from services.api.app.providers import detectors as detector_module
 from services.api.app.providers import rewriters as rewriter_module
 from services.api.app.providers.http_client import post_json_with_retry
 from services.api.app.providers.rewriters import _mock_rewrite, propose_rewrite
-from services.api.app.security import SlidingWindowLimiter
+from services.api.app.request_limits import RequestBodyLimitMiddleware
+from services.api.app.security import SlidingWindowLimiter, audit
 from services.api.app.storage import LocalObjectStorage, validate_object_key
 from services.api.app.text import document_quality_checks
 from tests.test_workflow import create_document
@@ -283,6 +285,20 @@ def test_owner_cannot_read_document_owned_by_another_identity(
     assert client.get(f"/api/v1/documents/{document['id']}", headers=headers).status_code == 404
 
 
+def test_password_hash_rotation_invalidates_existing_session(
+    client: TestClient, headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+):
+    assert client.get("/api/v1/documents", headers=headers).status_code == 200
+    original_hash = get_settings().owner_password_hash
+    monkeypatch.setenv("OWNER_PASSWORD_HASH", "$argon2id$v=19$m=8192,t=1,p=1$rotated$invalidbutversioned")
+    get_settings.cache_clear()
+    try:
+        assert client.get("/api/v1/documents", headers=headers).status_code == 401
+    finally:
+        monkeypatch.setenv("OWNER_PASSWORD_HASH", original_hash)
+        get_settings.cache_clear()
+
+
 def test_prompt_injection_is_treated_as_instruction_text(
     client: TestClient, headers: dict[str, str], coursework_text: str
 ):
@@ -318,10 +334,121 @@ def test_session_logout_revokes_bearer_token(client: TestClient, token: str):
 def test_oversized_request_is_rejected_before_parsing(client: TestClient):
     response = client.post(
         "/api/v1/auth/login",
-        headers={"Content-Length": str(7 * 1024 * 1024)},
+        headers={"Content-Length": str(7 * 1024 * 1024), "Origin": "http://testserver"},
         content=b"{}",
     )
     assert response.status_code == 413
+    assert response.headers["access-control-allow-origin"] == "http://testserver"
+
+
+@pytest.mark.parametrize("content_type", ["application/json", "multipart/form-data; boundary=test"])
+def test_chunked_oversized_request_is_rejected_before_application_parsing(content_type: str):
+    application_completed = False
+
+    async def inner_app(scope, receive, send):
+        nonlocal application_completed
+        while True:
+            message = await receive()
+            if not message.get("more_body", False):
+                break
+        application_completed = True
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    chunks = iter(
+        [
+            {"type": "http.request", "body": b"1234", "more_body": True},
+            {"type": "http.request", "body": b"5678", "more_body": False},
+        ]
+    )
+    sent: list[dict] = []
+
+    async def receive():
+        return next(chunks)
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/v1/documents",
+        "headers": [(b"content-type", content_type.encode("ascii"))],
+    }
+    middleware = RequestBodyLimitMiddleware(inner_app, max_bytes=6)
+    asyncio.run(middleware(scope, receive, send))
+
+    assert application_completed is False
+    assert next(message for message in sent if message["type"] == "http.response.start")["status"] == 413
+
+
+def test_request_body_exactly_at_limit_is_replayed():
+    received_body = b""
+
+    async def inner_app(scope, receive, send):
+        nonlocal received_body
+        message = await receive()
+        received_body = message["body"]
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    messages = iter([{"type": "http.request", "body": b"123456", "more_body": False}])
+    sent: list[dict] = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = RequestBodyLimitMiddleware(inner_app, max_bytes=6)
+    asyncio.run(middleware({"type": "http", "path": "/api/v1/test", "headers": []}, receive, send))
+
+    assert received_body == b"123456"
+    assert next(message for message in sent if message["type"] == "http.response.start")["status"] == 204
+
+
+@pytest.mark.parametrize("request_kind", ["json", "multipart"])
+def test_full_api_stops_headerless_stream_before_the_complete_body(request_kind: str):
+    class CountingStream(httpx.AsyncByteStream):
+        def __init__(self, payload: bytes) -> None:
+            self.payload = payload
+            self.bytes_sent = 0
+
+        async def __aiter__(self):
+            for offset in range(0, len(self.payload), 2 * 1024 * 1024):
+                chunk = self.payload[offset : offset + 2 * 1024 * 1024]
+                self.bytes_sent += len(chunk)
+                yield chunk
+
+    async def exercise():
+        if request_kind == "json":
+            payload = b'{"email":"owner@example.com","password":"' + b"x" * (10 * 1024 * 1024) + b'","totp_code":""}'
+            path = "/api/v1/auth/login"
+            content_type = "application/json"
+        else:
+            payload = (
+                b"--test\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nSynthetic\r\n"
+                b"--test\r\nContent-Disposition: form-data; name=\"text\"\r\n\r\n"
+                + b"x" * (10 * 1024 * 1024)
+                + b"\r\n--test--\r\n"
+            )
+            path = "/api/v1/documents"
+            content_type = "multipart/form-data; boundary=test"
+        stream = CountingStream(payload)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as api_client:
+            response = await api_client.post(
+                path,
+                headers={"Content-Type": content_type, "Origin": "http://testserver"},
+                content=stream,
+            )
+        return response, stream.bytes_sent, len(payload)
+
+    response, bytes_sent, payload_size = asyncio.run(exercise())
+    assert response.status_code == 413
+    assert response.headers["access-control-allow-origin"] == "http://testserver"
+    assert bytes_sent < payload_size
 
 
 def test_api_security_headers_and_cors(client: TestClient):
@@ -365,6 +492,22 @@ def test_sliding_window_limiter_rejects_burst():
     assert limiter.allow("client") is True
     assert limiter.allow("client") is True
     assert limiter.allow("client") is False
+
+
+def test_audit_metadata_drops_unapproved_content_fields():
+    with session_scope() as db:
+        audit(
+            db,
+            "owner@example.com",
+            "patch.proposed",
+            "document-id",
+            provider="DeepSeek",
+            documentText="synthetic text that must not reach the audit log",
+            apiKey="synthetic-key-like-value",
+        )
+        db.commit()
+        event = db.query(AuditEvent).one()
+        assert event.details == {"provider": "DeepSeek"}
 
 
 def test_object_storage_rejects_path_escape(tmp_path):

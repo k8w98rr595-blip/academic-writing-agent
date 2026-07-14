@@ -16,6 +16,7 @@ from .database import get_db, init_db, session_scope
 from .documents import DOCX_MIME, build_docx, extract_docx_text, validate_docx_upload
 from .models import AnalysisRun, Document, DocumentVersion, JobRecord, PatchRecord, RewriteSession, SessionRecord, utcnow
 from .providers import propose_rewrite, run_detection
+from .request_limits import RequestBodyLimitMiddleware
 from .schemas import (
     DocumentUpdateRequest,
     LoginRequest,
@@ -63,9 +64,6 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    content_length = request.headers.get("content-length")
-    if content_length and content_length.isdigit() and int(content_length) > 6 * 1024 * 1024:
-        return Response(status_code=status.HTTP_413_CONTENT_TOO_LARGE, content="Request body is too large")
     request_id = request.headers.get("x-request-id", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", request_id):
         request_id = secrets.token_urlsafe(12)
@@ -80,6 +78,16 @@ async def security_headers(request: Request, call_next):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/v1") else "no-cache"
     return response
+
+
+# Register last so this pure-ASGI guard remains outside BaseHTTPMiddleware and
+# counts streamed chunks before request bodies can be buffered or parsed.
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_bytes=6 * 1024 * 1024,
+    allowed_origins=tuple(settings.allowed_origins),
+    is_production=settings.is_production,
+)
 
 
 @app.get("/api/health")
