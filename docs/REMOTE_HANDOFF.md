@@ -16,7 +16,7 @@ GitHub Pages uses the `/academic-writing-agent` base path and the repository Act
 The following checks have passed:
 
 - Pages and its static assets return HTTP 200, and `config.js` contains the live Railway URL rather than the placeholder.
-- The credential-free Production smoke completed successfully for revision `795e6d4` (run `29355017630`, job `87160359090`). The 2026-07-15 hardening release must receive a new successful Pages and Railway deployment check after it is pushed.
+- The 2026-07-15 hardening revision `56f6e21` passed Pages run `29361217184` and credential-free Production smoke run `29361298967`.
 - The credential-free production smoke workflow verifies Mock detector mode, DeepSeek rewrite mode, configured owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
 - An earlier production owner flow completed with non-sensitive generated text: login, document creation, DeepSeek rewrite, semantic validation, patch acceptance, document deletion, and logout. The 2026-07-15 final acceptance flow is recorded separately and must be repeated after the hardening deployment before the current release is marked owner-ready.
 - Current local verification covers 37 backend/security tests, 2 frontend tests, 4 release-audit tests, type checking, the static Pages build, and expanded static secret scanning.

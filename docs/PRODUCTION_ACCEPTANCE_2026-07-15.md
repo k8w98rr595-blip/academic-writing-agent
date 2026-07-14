@@ -6,11 +6,11 @@ Target: Paperlight Academic Writing Agent owner-only production. All content use
 
 | Item | Observed result |
 | --- | --- |
-| Repository | Public GitHub repository, production revision observed at `795e6d4` before the acceptance hardening patch set |
+| Repository | Public GitHub repository; acceptance hardening revision `56f6e21` is on `main` |
 | Frontend | GitHub Pages returned HTTP 200 at the `/academic-writing-agent/` subpath |
 | API | Railway HTTPS endpoint returned a healthy Paperlight response |
 | Production modes | Detector `mock`; rewrite `deepseek`; owner configured; TOTP deliberately disabled |
-| Remote CI | Production smoke run `29355017630`, job `87160359090`, succeeded for revision `795e6d4` |
+| Remote CI | Pages run `29361217184` and Production smoke run `29361298967` succeeded for revision `56f6e21` |
 | Security review | Risk-ranked selected review: 12 of 120 ranked source-like files received full-file review; this is not an exhaustive repository audit |
 
 Reproduce the credential-free release check with:
@@ -37,11 +37,11 @@ node scripts/check-remote-release.mjs `
 | Exact production CORS | Pass | The Pages origin is allowed; credentialed CORS is disabled; an unauthenticated document request is not widened by CORS. |
 | Unauthenticated business access | Pass | `GET /api/v1/documents` returned HTTP 401. |
 | Auth status | Pass | Owner authentication is configured and `requiresTotp=false`, matching the temporary password-only decision. |
-| Password login | Previously passed; final rerun pending | An existing authenticated production workspace was observed without reading a password. The final post-deployment login rerun requires the owner session after rotation-bound session invalidation. |
+| Password login | Previously passed; final rerun pending | An existing authenticated production workspace was observed without reading a password. Revision `56f6e21` intentionally invalidates pre-hardening sessions, so the final rerun requires a fresh owner login. |
 | Synthetic document create → Mock detection → rewrite → patch → stale result → recheck → DOCX export → delete → logout | Pending | Requires the owner's explicit confirmation for one small real DeepSeek call and production create/export/delete actions. A prior attempt reached document creation and Mock detection, then timed out waiting for DeepSeek; cleanup ran and the workspace subsequently showed no files. |
 | Mock label | Source and release gate pass; final UI run pending | Production UI uses “演示检测，不代表真实服务”, “演示”, and “运行演示检测”; a live completed analysis must still be captured in the final browser run. |
 | Residue check | Partial pass | The production workspace showed no recent files after the timed-out run. Final document, export, rewrite-session, and logout residue checks remain tied to the pending full flow. |
-| Request-body limits | Fixed locally; deployment pending | Headerless valid JSON and multipart streams now return 413 before complete-body consumption. The Railway edge was not tested with oversized traffic. |
+| Request-body limits | Deployed and locally verified | Headerless valid JSON and multipart streams return 413 before complete-body consumption in full-app ASGI tests. Production smoke confirms the deployed API is healthy, but intentionally oversized traffic was not sent to Railway. |
 
 The production browser flow must not be marked complete until every pending row above is rerun against the final deployed commit.
 
@@ -83,8 +83,8 @@ Official control references: [Railway plans](https://docs.railway.com/pricing/pl
 | Real rewrite acceptance timed out | Run the synthetic owner flow and wait for the DeepSeek rewrite/validator pair; the first automation attempt exceeded its read timeout after Mock detection. | Acceptance client timeout increased to 240 seconds; final production rerun pending. |
 | Plaintext credential handoffs inherited broader ACLs | On the scanned revision, create only synthetic files under an inheriting Windows directory and inspect ACE inheritance. | Source fixed with atomic fail-closed secure writes; current existing file ACLs hardened; rotation/migration/deletion remain operational. |
 | Password rotation did not revoke old sessions | Issue a session, replace the configured owner password hash, then re-use the old bearer. | Fixed and covered by regression test; production deployment will intentionally sign out existing sessions. |
-| Headerless JSON crossed the 6 MiB policy | Stream a valid oversized login body without `Content-Length` through local full-app ASGI. | Fixed locally with an outer bounded pre-buffer/replay middleware and full-app regression coverage; production deployment pending. |
-| Headerless multipart parsed before 401 | Stream a valid oversized document multipart body without `Content-Length` through local full-app ASGI. | Fixed by the same boundary; production deployment pending. |
+| Headerless JSON crossed the 6 MiB policy | Stream a valid oversized login body without `Content-Length` through local full-app ASGI. | Fixed and deployed with an outer bounded pre-buffer/replay middleware and full-app regression coverage. |
+| Headerless multipart parsed before 401 | Stream a valid oversized document multipart body without `Content-Length` through local full-app ASGI. | Fixed and deployed by the same boundary. |
 
 ## Remaining risks and owner actions
 
@@ -99,4 +99,4 @@ Official control references: [Railway plans](https://docs.railway.com/pricing/pl
 
 ## Readiness conclusion
 
-Current status: **not yet final-accepted**. Credential-free release checks, static delivery, unauthenticated isolation, platform configuration, selected credential audit, local hardening, and test coverage pass. Owner-ready status remains blocked on the final authenticated production workflow against the deployed hardening commit, cleanup verification, and the owner decisions listed above. This status must be updated only after those checks are observed, not inferred.
+Current status: **not yet final-accepted**. Revision `56f6e21` is pushed; Pages deployment and Production smoke both pass. Credential-free release checks, static delivery, unauthenticated isolation, selected credential audit, deployed hardening, and local test coverage pass. Owner-ready status remains blocked on a fresh password login, the final authenticated production workflow, cleanup verification, and the owner decisions listed above. This status must be updated only after those checks are observed, not inferred.
