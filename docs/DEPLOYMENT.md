@@ -20,7 +20,8 @@ Create a service from the root Dockerfile, attach a persistent volume at `/data`
 - `ALLOWED_ORIGINS=https://k8w98rr595-blip.github.io`
 - `OWNER_EMAIL`, `OWNER_PASSWORD_HASH`, `OWNER_TOTP_SECRET`
 - `COOKIE_SECURE=1`
-- `DETECTOR_MODE=mock`, `REWRITE_MODE=mock` until provider contracts and keys are ready
+- `DETECTOR_MODE=mock`
+- `REWRITE_MODE=deepseek`, `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL=deepseek-v4-pro`, and `DEEPSEEK_VALIDATOR_MODEL=deepseek-v4-flash` for the owner-only production rewrite path
 
 Do not deploy with the local bootstrap password file. Generate production password and TOTP values separately and store only their hash/secret in Railway variables.
 
@@ -33,9 +34,9 @@ The single-owner mock release can use Railway PostgreSQL and an attached `/data`
 After Pages and Railway are configured, verify the public release without supplying a GitHub or provider token:
 
 ```powershell
-pnpm check:release --backend-url https://api-production-840c.up.railway.app
+pnpm check:release --backend-url https://api-production-840c.up.railway.app --expected-rewrite-mode deepseek
 ```
 
-The check requires a public repository, a successful latest Actions run, HTTP 200 from Pages, Mock provider mode, a configured TOTP owner, and HTTP 401 from the protected documents endpoint. It exits with code `0` only when the complete owner-only Mock release is ready. Use `--json` for machine-readable evidence.
+The check requires a public repository, a successful latest Actions run, HTTP 200 from Pages, Mock detector mode, DeepSeek rewrite mode, a configured TOTP owner, and HTTP 401 from the protected documents endpoint. It exits with code `0` only when the owner-only release boundary is ready. Use `--json` for machine-readable evidence.
 
 The manual `Production smoke` workflow provides the same credential-free production boundary check from a GitHub-hosted runner and also verifies that Pages contains the Railway URL and the expected CORS origin.

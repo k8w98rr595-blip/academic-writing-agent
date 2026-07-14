@@ -2,19 +2,23 @@ name: Production smoke
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Test and deploy GitHub Pages"]
+    types: [completed]
 
 permissions:
   contents: read
 
 jobs:
   smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Verify Pages and owner-only API
         env:
           BACKEND_URL: ${{ vars.PAPERLIGHT_API_BASE_URL }}
           PAGES_URL: https://k8w98rr595-blip.github.io/academic-writing-agent
-          EXPECTED_REWRITE_MODE: ${{ vars.PAPERLIGHT_EXPECTED_REWRITE_MODE || 'mock' }}
+          EXPECTED_REWRITE_MODE: ${{ vars.PAPERLIGHT_EXPECTED_REWRITE_MODE || 'deepseek' }}
         run: |
           set -euo pipefail
           test -n "$BACKEND_URL"
