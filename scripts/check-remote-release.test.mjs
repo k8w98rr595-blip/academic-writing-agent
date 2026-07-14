@@ -21,6 +21,7 @@ function routeFetch(routes) {
 test("parseArgs rejects unsafe production URLs", () => {
   assert.throws(() => parseArgs(["--backend-url", "http://example.com"]), /must use HTTPS/);
   assert.throws(() => parseArgs(["--pages-url", "https://example.com/?token=secret"]), /must not contain/);
+  assert.throws(() => parseArgs(["--expected-requires-totp", "no"]), /must be true or false/);
 });
 
 test("private repository produces explicit identity-gate blockers", async () => {
@@ -73,6 +74,8 @@ test("detector and rewrite modes can be audited independently", async () => {
     "mock",
     "--expected-rewrite-mode",
     "deepseek",
+    "--expected-requires-totp",
+    "false",
   ]);
   const result = await runReleaseCheck(options, {
     fetchImpl: routeFetch({
@@ -90,11 +93,12 @@ test("detector and rewrite modes can be audited independently", async () => {
       }),
       "https://paperlight.example.com/api/v1/auth/status": response(200, {
         configured: true,
-        requiresTotp: true,
+        requiresTotp: false,
       }),
       "https://paperlight.example.com/api/v1/documents": response(401),
     }),
   });
   assert.equal(result.backend.ok, true);
+  assert.equal(result.backend.auth.expectedRequiresTotp, false);
   assert.equal(result.productionReady, true);
 });

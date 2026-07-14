@@ -19,6 +19,7 @@ jobs:
           BACKEND_URL: ${{ vars.PAPERLIGHT_API_BASE_URL }}
           PAGES_URL: https://k8w98rr595-blip.github.io/academic-writing-agent
           EXPECTED_REWRITE_MODE: ${{ vars.PAPERLIGHT_EXPECTED_REWRITE_MODE || 'deepseek' }}
+          EXPECTED_REQUIRES_TOTP: ${{ vars.PAPERLIGHT_EXPECTED_REQUIRES_TOTP || 'false' }}
         run: |
           set -euo pipefail
           test -n "$BACKEND_URL"
@@ -29,7 +30,8 @@ jobs:
           jq -e --arg rewrite "$EXPECTED_REWRITE_MODE" '.ok == true and .providerMode.detector == "mock" and .providerMode.rewrite == $rewrite' <<<"$health" >/dev/null
 
           auth="$(curl "${retry[@]}" --fail "$BACKEND_URL/api/v1/auth/status")"
-          jq -e '.configured == true and .requiresTotp == true' <<<"$auth" >/dev/null
+          jq -e --argjson requires_totp "$EXPECTED_REQUIRES_TOTP" \
+            '.configured == true and .requiresTotp == $requires_totp' <<<"$auth" >/dev/null
 
           protected_status="$(curl "${retry[@]}" --output /dev/null --write-out '%{http_code}' "$BACKEND_URL/api/v1/documents")"
           test "$protected_status" = "401"
@@ -51,4 +53,4 @@ jobs:
             "$BACKEND_URL/api/v1/auth/login"
           grep -i '^access-control-allow-origin: https://k8w98rr595-blip.github.io' "$cors_headers" >/dev/null
 
-          echo "Production smoke passed: detector=mock rewrite=$EXPECTED_REWRITE_MODE."
+          echo "Production smoke passed: detector=mock rewrite=$EXPECTED_REWRITE_MODE requiresTotp=$EXPECTED_REQUIRES_TOTP."

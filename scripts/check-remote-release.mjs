@@ -6,6 +6,7 @@ const DEFAULTS = {
   backendUrl: "",
   expectedDetectorMode: "mock",
   expectedRewriteMode: "mock",
+  expectedRequiresTotp: true,
   json: false,
 };
 
@@ -40,6 +41,13 @@ export function parseArgs(argv) {
       index += 1;
     } else if (flag === "--expected-rewrite-mode") {
       options.expectedRewriteMode = takeValue(argv, index, flag);
+      index += 1;
+    } else if (flag === "--expected-requires-totp") {
+      const value = takeValue(argv, index, flag);
+      if (value !== "true" && value !== "false") {
+        throw new Error("--expected-requires-totp must be true or false");
+      }
+      options.expectedRequiresTotp = value === "true";
       index += 1;
     } else if (flag === "--json") {
       options.json = true;
@@ -175,7 +183,7 @@ export async function runReleaseCheck(options, { fetchImpl = fetch } = {}) {
     const authOk =
       authResponse.status === 200 &&
       authResponse.payload?.configured === true &&
-      authResponse.payload?.requiresTotp === true;
+      authResponse.payload?.requiresTotp === options.expectedRequiresTotp;
     const boundaryOk = documentsResponse.status === 401;
     backend = {
       configured: true,
@@ -189,7 +197,8 @@ export async function runReleaseCheck(options, { fetchImpl = fetch } = {}) {
       auth: {
         status: authResponse.status,
         configured: authResponse.payload?.configured === true,
-        requiresTotp: authResponse.payload?.requiresTotp === true,
+        requiresTotp: authResponse.payload?.requiresTotp ?? null,
+        expectedRequiresTotp: options.expectedRequiresTotp,
       },
       unauthenticatedDocumentsStatus: documentsResponse.status,
       code:
