@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import "@fontsource-variable/manrope";
+import "@fontsource/source-serif-4/400.css";
+import "@fontsource/source-serif-4/600.css";
+import "@fontsource/source-serif-4/700.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -12,7 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     ? "script-src 'self' 'unsafe-inline'"
     : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <head>
         <meta
           httpEquiv="Content-Security-Policy"

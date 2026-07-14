@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource-variable/manrope": "^5.2.8",
+    "@fontsource/source-serif-4": "^5.2.9",
     "lucide-react": "^0.468.0",
     "next": "^15.5.0",
     "react": "^19.1.0",

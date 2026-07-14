@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlignLeft, Bold, ChevronDown, Download, FileText, Italic, LogOut, Plus, Redo2, Save, Trash2, Undo2 } from "lucide-react";
+import { AlignLeft, Bold, ChevronDown, Download, FileClock, FileText, History, Italic, ListTree, LogOut, Plus, Redo2, Save, ShieldCheck, Sparkles, Trash2, Undo2 } from "lucide-react";
 import { api, downloadExport } from "@/lib/api";
 import type { DocumentListItem, PaperDocument, Paragraph, Patch, VersionSummary } from "@/lib/types";
 import { Inspector, type InspectorTab } from "./Inspector";
@@ -34,6 +34,7 @@ export function Workspace(props: Props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const spans = document.analysis?.result?.spans || [];
   const stale = dirty || Boolean(document.analysis?.isStale);
 
@@ -55,6 +56,11 @@ export function Workspace(props: Props) {
 
   function updateParagraph(paragraphId: string, value: string) {
     setParagraphs((current) => current.map((paragraph) => paragraph.id === paragraphId ? { ...paragraph, text: value } : paragraph));
+  }
+
+  function openInspector(nextTab: InspectorTab) {
+    setTab(nextTab);
+    setInspectorCollapsed(false);
   }
 
   async function saveDraft(): Promise<PaperDocument> {
@@ -169,13 +175,43 @@ export function Workspace(props: Props) {
 
   return (
     <main className="workspace-shell">
-      {confirmation ? <div className="confirmation-backdrop"><section className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirmation-title"><h2 id="confirmation-title">{confirmation.kind === "delete" ? "Delete this document now?" : `Restore version ${confirmation.version.number}?`}</h2><p>{confirmation.kind === "delete" ? "Every version, analysis, patch, job, and export will be removed immediately. This cannot be undone." : "The selected text will become a new immutable version. Existing versions remain available."}</p><div><button className="button secondary" disabled={busy} onClick={() => setConfirmation(null)}>Cancel</button><button className={confirmation.kind === "delete" ? "button danger-confirm" : "button primary"} disabled={busy} onClick={() => confirmation.kind === "delete" ? void confirmRemove() : void confirmRestore(confirmation.version)}>{confirmation.kind === "delete" ? "Confirm deletion" : "Confirm restore"}</button></div></section></div> : null}
-      <header className="workspace-header"><div className="brand-lockup"><span className="brand-mark">P</span><strong>Paperlight</strong></div><label className="document-picker"><span className="visually-hidden">Open document</span><select value={document.id} onChange={(event) => onOpen(event.target.value)}>{documents.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><ChevronDown size={16} /></label><div className="header-actions"><button className="button primary" onClick={onNew}><Plus size={17} />New document</button><button className="button secondary" onClick={() => void downloadExport(document)}><Download size={17} />Export .docx</button><button className="button danger-outline desktop-only" onClick={remove} disabled={busy}><Trash2 size={17} />Delete</button><button className="icon-button" title="Sign out" onClick={onLogout}><LogOut size={18} /></button></div></header>
-      <div className="workspace-grid">
-        <aside className="document-rail"><div className="rail-section"><div className="rail-heading"><span>Document</span><button onClick={onNew} title="New document"><Plus size={16} /></button></div><div className="active-document"><FileText size={17} /><div><strong>{document.title}</strong><span>{document.currentVersion.wordCount.toLocaleString()} words</span></div></div></div><div className="rail-section outline"><div className="rail-heading"><span>Outline</span></div>{outline.length ? outline.map((item, index) => <button key={item.id} onClick={() => window.document.querySelector(`[data-paragraph-id="${item.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}><span>{index + 1}.</span>{item.text}</button>) : <p>Short headings appear here.</p>}</div><div className="rail-footer"><span>Deletes {new Date(document.expiresAt).toLocaleDateString()}</span></div></aside>
-        <section className="editor-region"><div className="editor-toolbar" aria-label="Editor tools"><button title="Undo" onClick={() => window.document.execCommand("undo")}><Undo2 size={17} /></button><button title="Redo" onClick={() => window.document.execCommand("redo")}><Redo2 size={17} /></button><span className="toolbar-separator" /><button title="Bold" onClick={() => window.document.execCommand("bold")}><Bold size={17} /></button><button title="Italic" onClick={() => window.document.execCommand("italic")}><Italic size={17} /></button><button title="Align left"><AlignLeft size={17} /></button><span className="toolbar-spacer" />{dirty ? <button className="save-action" disabled={busy} onClick={() => void saveDraft()}><Save size={16} />Save version</button> : <span className="saved-state"><Save size={15} />Version {document.currentVersion.number} saved</span>}</div>{message ? <div className="workspace-message" role="status">{message}</div> : null}<div className="paper-scroller"><PaperEditor paragraphs={paragraphs} spans={spans} stale={stale} onDirty={() => setDirty(true)} onParagraphBlur={updateParagraph} onSelection={setSelection} /></div><footer className="editor-status"><span>{document.currentVersion.wordCount.toLocaleString()} words</span><span>English coursework</span><span>{stale ? "Detection needs refresh" : "Analysis aligned"}</span></footer></section>
-        <Inspector tab={tab} document={document} selectedText={selection.text} pendingPatch={pendingPatch} instruction={instruction} busy={busy} onTab={setTab} onInstruction={setInstruction} onAnalyze={() => void analyze()} onPropose={() => void propose()} onAccept={(patch) => void accept(patch)} onReject={(patch) => void reject(patch)} onRestore={restore} />
-      </div>
+      {confirmation ? <div className="confirmation-backdrop"><section className="confirmation-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirmation-title"><span className="eyebrow">CONFIRM ACTION</span><h2 id="confirmation-title">{confirmation.kind === "delete" ? "立即删除这篇文稿？" : `恢复版本 ${confirmation.version.number}？`}</h2><p>{confirmation.kind === "delete" ? "所有版本、检测结果、补丁、任务和导出文件都会被立即删除，此操作无法撤销。" : "所选版本会成为新的不可变版本，已有历史版本仍会保留。"}</p><div><button className="button secondary" disabled={busy} onClick={() => setConfirmation(null)}>取消</button><button className={confirmation.kind === "delete" ? "button danger-confirm" : "button primary"} disabled={busy} onClick={() => confirmation.kind === "delete" ? void confirmRemove() : void confirmRestore(confirmation.version)}>{confirmation.kind === "delete" ? "确认删除" : "确认恢复"}</button></div></section></div> : null}
+
+      <aside className="studio-nav" aria-label="主要导航">
+        <div className="studio-brand"><span className="brand-mark inverse">P</span><strong>Paperlight</strong></div>
+        <nav>
+          <button className={inspectorCollapsed ? "active" : ""} onClick={() => setInspectorCollapsed(true)} title="文稿"><FileText size={22} /><span>文稿</span></button>
+          <button onClick={() => setInspectorCollapsed(true)} title="结构"><ListTree size={22} /><span>结构</span></button>
+          <button className={!inspectorCollapsed && tab === "agent" ? "active" : ""} onClick={() => openInspector("agent")} title="写作助手"><Sparkles size={22} /><span>写作助手</span></button>
+          <button className={!inspectorCollapsed && tab === "detection" ? "active" : ""} onClick={() => openInspector("detection")} title="AI 检测"><ShieldCheck size={22} /><span>AI 检测</span></button>
+          <button className={!inspectorCollapsed && tab === "versions" ? "active" : ""} onClick={() => openInspector("versions")} title="版本"><History size={22} /><span>版本</span></button>
+        </nav>
+        <button className="studio-logout" title="退出登录" onClick={onLogout}><LogOut size={20} /><span>退出</span></button>
+      </aside>
+
+      <section className="workspace-stage">
+        <header className="workspace-header">
+          <div className="document-title-block"><h1>{document.title}</h1><div><span className="saved-state"><Save size={14} />{dirty ? "有未保存修改" : `版本 ${document.currentVersion.number} 已保存`}</span><span>{document.currentVersion.wordCount.toLocaleString()} 词</span></div></div>
+          <div className="header-actions"><button className="button secondary compact" onClick={() => openInspector("versions")}><FileClock size={17} />版本</button><button className="button secondary compact" onClick={() => void downloadExport(document)}><Download size={17} />导出 DOCX</button><button className="button secondary compact desktop-only" onClick={remove} disabled={busy}><Trash2 size={17} />删除</button><button className="button primary compact" onClick={onNew}><Plus size={18} />新建文稿</button></div>
+        </header>
+
+        <div className={`workspace-grid ${inspectorCollapsed ? "inspector-collapsed" : ""}`}>
+          <aside className="document-rail">
+            <div className="rail-section document-switcher"><div className="rail-heading"><span>文稿大纲</span><button onClick={onNew} title="新建文稿"><Plus size={17} /></button></div><label className="document-picker"><span className="visually-hidden">打开文稿</span><select value={document.id} onChange={(event) => onOpen(event.target.value)}>{documents.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><ChevronDown size={15} /></label></div>
+            <div className="rail-section outline">{outline.length ? outline.map((item, index) => <button key={item.id} onClick={() => window.document.querySelector(`[data-paragraph-id="${item.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}><span>{String(index + 1).padStart(2, "0")}</span>{item.text}</button>) : <p>较短的标题会显示在这里。</p>}</div>
+            <div className="rail-footer"><span>自动删除：{new Date(document.expiresAt).toLocaleDateString()}</span><strong>{document.currentVersion.wordCount.toLocaleString()} 词</strong></div>
+          </aside>
+
+          <section className="editor-region">
+            {message ? <div className="workspace-message" role="status">{message}</div> : null}
+            <div className="paper-scroller"><PaperEditor paragraphs={paragraphs} spans={spans} stale={stale} onDirty={() => setDirty(true)} onParagraphBlur={updateParagraph} onSelection={setSelection} /></div>
+            <div className="editor-toolbar" aria-label="编辑器工具"><button title="撤销" onClick={() => window.document.execCommand("undo")}><Undo2 size={17} /></button><button title="重做" onClick={() => window.document.execCommand("redo")}><Redo2 size={17} /></button><span className="toolbar-separator" /><span className="toolbar-style">正文</span><span className="toolbar-font">Source Serif 4</span><span className="toolbar-separator" /><button title="加粗" onClick={() => window.document.execCommand("bold")}><Bold size={17} /></button><button title="斜体" onClick={() => window.document.execCommand("italic")}><Italic size={17} /></button><button title="左对齐"><AlignLeft size={17} /></button>{dirty ? <><span className="toolbar-separator" /><button className="save-action" disabled={busy} onClick={() => void saveDraft()}><Save size={16} />保存版本</button></> : null}</div>
+            <footer className="editor-status"><span>英文课程论文</span><span>{stale ? "检测结果需要刷新" : "检测结果与当前版本一致"}</span></footer>
+          </section>
+
+          <Inspector tab={tab} collapsed={inspectorCollapsed} onToggleCollapsed={() => setInspectorCollapsed((value) => !value)} document={document} selectedText={selection.text} pendingPatch={pendingPatch} instruction={instruction} busy={busy} onTab={openInspector} onInstruction={setInstruction} onAnalyze={() => void analyze()} onPropose={() => void propose()} onAccept={(patch) => void accept(patch)} onReject={(patch) => void reject(patch)} onRestore={restore} />
+        </div>
+      </section>
     </main>
   );
 }

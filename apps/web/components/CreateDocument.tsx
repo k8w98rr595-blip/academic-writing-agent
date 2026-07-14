@@ -31,20 +31,20 @@ export function CreateDocument({ busy, error, documents, onCreate, onOpen, onLog
 
   return (
     <main className="library-shell">
-      <header className="library-header"><div className="brand-lockup"><span className="brand-mark">P</span><strong>Paperlight</strong></div><button className="icon-text-button" onClick={onLogout}><LogOut size={17} />Sign out</button></header>
+      <header className="library-header"><div className="brand-lockup"><span className="brand-mark">P</span><strong>Paperlight</strong></div><button className="icon-text-button" onClick={onLogout}><LogOut size={17} />退出登录</button></header>
       <div className="library-grid">
-        <aside className="recent-rail"><h2>Recent documents</h2>{documents.length ? documents.map((item) => <button key={item.id} className="recent-row" onClick={() => onOpen(item.id)}><strong>{item.title}</strong><span>{new Date(item.updatedAt).toLocaleDateString()}</span></button>) : <p>No documents yet.</p>}</aside>
+        <aside className="recent-rail"><span className="library-rail-label">文稿库</span><h2>最近文稿</h2>{documents.length ? documents.map((item) => <button key={item.id} className="recent-row" onClick={() => onOpen(item.id)}><strong>{item.title}</strong><span>{new Date(item.updatedAt).toLocaleDateString()}</span></button>) : <p>尚无文稿。</p>}</aside>
         <section className="create-panel" aria-labelledby="create-title">
-          <div className="create-heading"><span className="large-icon"><FilePlus2 /></span><div><h1 id="create-title">Start a coursework review</h1><p>Paste an English paper or import a safe .docx file. V1 supports 800–5,000 words.</p></div></div>
+          <div className="create-heading"><span className="large-icon"><FilePlus2 /></span><div><span className="eyebrow">NEW REVIEW</span><h1 id="create-title">开始一次论文审阅</h1><p>粘贴英文论文，或导入通过安全校验的 .docx 文件。当前支持 800 至 5,000 个英文单词。</p></div></div>
           <form onSubmit={submit}>
-            <label className="field-label">Document title<input value={title} maxLength={180} onChange={(event) => setTitle(event.target.value)} required /></label>
-            <div className="source-tabs" role="group" aria-label="Document source">
-              <button type="button" className={!file ? "active" : ""} onClick={() => setFile(null)}>Paste text</button>
-              <label className={file ? "active upload-tab" : "upload-tab"}><Upload size={16} />Import .docx<input className="visually-hidden" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
+            <label className="field-label">文稿标题<input value={title} maxLength={180} onChange={(event) => setTitle(event.target.value)} required /></label>
+            <div className="source-tabs" role="group" aria-label="文稿来源">
+              <button type="button" className={!file ? "active" : ""} onClick={() => setFile(null)}>粘贴文本</button>
+              <label className={file ? "active upload-tab" : "upload-tab"}><Upload size={16} />导入 .docx<input className="visually-hidden" type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
             </div>
-            {file ? <div className="file-choice"><Upload size={18} /><div><strong>{file.name}</strong><span>{Math.ceil(file.size / 1024)} KB · server-side validation required</span></div></div> : <div className="paper-input-wrap"><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Paste the paper with paragraph breaks…" /><div className="input-footer"><span className={words >= 800 && words <= 5000 ? "valid" : ""}>{words.toLocaleString()} / 800–5,000 words</span><button type="button" className="text-action" onClick={() => setText(makeDemoPaper())}><WandSparkles size={15} />Use safe demo paper</button></div></div>}
+            {file ? <div className="file-choice"><Upload size={18} /><div><strong>{file.name}</strong><span>{Math.ceil(file.size / 1024)} KB · 将在服务端执行安全校验</span></div></div> : <div className="paper-input-wrap"><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="在此粘贴论文，并保留段落分隔..." /><div className="input-footer"><span className={words >= 800 && words <= 5000 ? "valid" : ""}>{words.toLocaleString()} / 800 至 5,000 词</span><button type="button" className="text-action" onClick={() => setText(makeDemoPaper())}><WandSparkles size={15} />使用安全演示论文</button></div></div>}
             {error ? <p className="form-error" role="alert">{error}</p> : null}
-            <button className="button primary" disabled={busy || !title.trim() || (!file && (words < 800 || words > 5000))}>{busy ? "Creating…" : "Create private workspace"}</button>
+            <button className="button primary create-submit" disabled={busy || !title.trim() || (!file && (words < 800 || words > 5000))}>{busy ? "正在创建..." : "创建私密工作台"}</button>
           </form>
         </section>
       </div>

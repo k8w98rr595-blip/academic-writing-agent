@@ -13,6 +13,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@fontsource-variable/manrope':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@fontsource/source-serif-4':
+        specifier: ^5.2.9
+        version: 5.2.9
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.2.7)
@@ -204,6 +210,12 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@fontsource-variable/manrope@5.2.8':
+    resolution: {integrity: sha512-nc9lOuCRz73UHnovDE2bwXUdghE2SEOc7Aii0qGe3CLyE03W1a7VnY5Z6euRiapiKbCkGS+eXbY3s/kvWeGeSw==}
+
+  '@fontsource/source-serif-4@5.2.9':
+    resolution: {integrity: sha512-er/Pym9emsEVJNf947umJ4kXarXfsiN6CN7kTYinefKRaHLwiquiiHOZvKvxWgkV8JMCf3pV3g0NcsPFpVCH9w==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -988,6 +1000,10 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.1':
     optional: true
+
+  '@fontsource-variable/manrope@5.2.8': {}
+
+  '@fontsource/source-serif-4@5.2.9': {}
 
   '@img/colour@1.1.0':
     optional: true
