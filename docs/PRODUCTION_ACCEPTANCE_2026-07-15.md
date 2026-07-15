@@ -6,11 +6,11 @@ Target: Paperlight Academic Writing Agent owner-only production. All content use
 
 | Item | Observed result |
 | --- | --- |
-| Repository | Public GitHub repository; acceptance hardening revision `56f6e21` is on `main` |
+| Repository | Public GitHub repository; the tested deployment includes acceptance hardening revision `56f6e21`; pre-acceptance documentation revision `4660861` is on `main` |
 | Frontend | GitHub Pages returned HTTP 200 at the `/academic-writing-agent/` subpath |
 | API | Railway HTTPS endpoint returned a healthy Paperlight response |
 | Production modes | Detector `mock`; rewrite `deepseek`; owner configured; TOTP deliberately disabled |
-| Remote CI | Pages run `29361217184` and Production smoke run `29361298967` succeeded for revision `56f6e21` |
+| Remote CI | Pages run `29361860772` and Production smoke run `29361943400` succeeded for revision `4660861` |
 | Security review | Risk-ranked selected review: 12 of 120 ranked source-like files received full-file review; this is not an exhaustive repository audit |
 
 Reproduce the credential-free release check with:
@@ -37,13 +37,17 @@ node scripts/check-remote-release.mjs `
 | Exact production CORS | Pass | The Pages origin is allowed; credentialed CORS is disabled; an unauthenticated document request is not widened by CORS. |
 | Unauthenticated business access | Pass | `GET /api/v1/documents` returned HTTP 401. |
 | Auth status | Pass | Owner authentication is configured and `requiresTotp=false`, matching the temporary password-only decision. |
-| Password login | Previously passed; final rerun pending | An existing authenticated production workspace was observed without reading a password. Revision `56f6e21` intentionally invalidates pre-hardening sessions, so the final rerun requires a fresh owner login. |
-| Synthetic document create → Mock detection → rewrite → patch → stale result → recheck → DOCX export → delete → logout | Pending | Requires the owner's explicit confirmation for one small real DeepSeek call and production create/export/delete actions. A prior attempt reached document creation and Mock detection, then timed out waiting for DeepSeek; cleanup ran and the workspace subsequently showed no files. |
-| Mock label | Source and release gate pass; final UI run pending | Production UI uses “演示检测，不代表真实服务”, “演示”, and “运行演示检测”; a live completed analysis must still be captured in the final browser run. |
-| Residue check | Partial pass | The production workspace showed no recent files after the timed-out run. Final document, export, rewrite-session, and logout residue checks remain tied to the pending full flow. |
+| Password login | Pass | A fresh owner password session reached the empty production workspace. TOTP remained deliberately disabled and no authentication secret is recorded here. |
+| Synthetic document create → Mock detection → rewrite → patch → stale result → recheck → DOCX export → delete → logout | Pass | Created a 1,127-word synthetic document, ran Mock detection, obtained a real DeepSeek V4 patch, accepted it as version 2, observed the prior result become stale, rechecked, exported DOCX, deleted the document tree, and logged out. |
+| Mock label | Pass | The completed production result showed “演示检测，不代表真实服务” and “演示”. Initial estimate was 18.6% (11.3%–25.8%); the fresh version-2 result was 18.9% (14.1%–23.7%). These values are deterministic demonstration evidence, not authorship conclusions. |
+| Protected-content controls | Pass | The accepted patch preserved `42`, `2025`, `17.5%`, `(Lovelace, 1843)`, `[2]`, the quotation, the URL, and all named entities verbatim. Visible metadata identified `DeepSeek`, `deepseek-v4-pro`, and the `deepseek-v4-flash` semantic-safety validator. |
+| Fail-closed provider behavior | Pass | One proposal was rejected because punctuation became attached to the protected URL, and one retry timed out. Neither produced an applicable patch. A third minimal-edit request passed protection and semantic validation. |
+| DOCX package | Pass | Production exported a 37,793-byte DOCX containing `word/document.xml` and `[Content_Types].xml`; the synthetic download was removed after validation. |
+| Residue check | Pass | After deletion the authenticated workspace showed “尚无文稿”; the modal states that versions, analyses, patches, jobs, and server exports are deleted together. The local synthetic DOCX was absent, and logout returned to the login screen. |
+| DeepSeek native balance warning | Pass | Enabled and reopened the setting to verify the switch remained on with a CNY 10 threshold. No recharge, purchase, payment change, or plan upgrade was made. |
 | Request-body limits | Deployed and locally verified | Headerless valid JSON and multipart streams return 413 before complete-body consumption in full-app ASGI tests. Production smoke confirms the deployed API is healthy, but intentionally oversized traffic was not sent to Railway. |
 
-The production browser flow must not be marked complete until every pending row above is rerun against the final deployed commit.
+The production browser flow above was completed against the final deployed commit; future deployments must repeat the same synthetic-only sequence before inheriting this acceptance status.
 
 ## Credential custody audit
 
@@ -68,7 +72,7 @@ TOTP remains disabled by design. Password compromise currently grants owner acce
 | Provider | Current state | Daily | Weekly | Monthly soft / hard | Native or account action |
 | --- | --- | ---:| ---:| ---:| --- |
 | Railway | Limited Trial; 22 days or USD 4.53 remained when checked | USD 0.50 | USD 2 | USD 10 / USD 15 | No purchase, upgrade, payment change, or hard shutdown was applied. Owner must decide before the earlier of expiry or credit exhaustion. |
-| DeepSeek | CNY 19.98 balance; CNY 0.01 cumulative spend; 15 requests / 5,755 tokens when checked | CNY 1 | CNY 5 | CNY 10 / CNY 20 | Native balance warning is off. Proposed low-balance warning: CNY 10, after explicit owner confirmation; no recharge. |
+| DeepSeek | CNY 19.83 balance; CNY 0.16 cumulative spend; 26 requests / 33,255 tokens after the accepted test | CNY 1 | CNY 5 | CNY 10 / CNY 20 | Native low-balance warning is enabled at CNY 10. No recharge or payment change. |
 | Pangram | Disabled; no credential | 20 credits or USD 1 | 100 credits or USD 5 | 300 or USD 15 / 500 or USD 25 | Configure balance polling and keep auto-refill off before enabling. Pause new scans at 100 credits. |
 | Copyleaks | Disabled; no credential | 80 credits | 400 credits | 800 / 1,200 credits | Configure check-credits and usage reconciliation; keep automatic replenish off. Pause new scans at 200 credits. |
 
@@ -80,7 +84,8 @@ Official control references: [Railway plans](https://docs.railway.com/pricing/pl
 
 | Failure | Reproduction | Status |
 | --- | --- | --- |
-| Real rewrite acceptance timed out | Run the synthetic owner flow and wait for the DeepSeek rewrite/validator pair; the first automation attempt exceeded its read timeout after Mock detection. | Acceptance client timeout increased to 240 seconds; final production rerun pending. |
+| Real rewrite protection and timeout branches | On the protected paragraph, the first proposal attached punctuation to the URL and the second request timed out. | Both failed closed. A third request returned a protected, semantically validated DeepSeek patch and was accepted as version 2. |
+| Browser autofill exposed a password field value to the automation accessibility channel | Log out after a saved browser password has autofilled the production login form, then inspect the accessible form state. | The field was immediately cleared and the value is not repeated in any project artifact. Owner password rotation and disabling autofill for this origin are required follow-up. |
 | Plaintext credential handoffs inherited broader ACLs | On the scanned revision, create only synthetic files under an inheriting Windows directory and inspect ACE inheritance. | Source fixed with atomic fail-closed secure writes; current existing file ACLs hardened; rotation/migration/deletion remain operational. |
 | Password rotation did not revoke old sessions | Issue a session, replace the configured owner password hash, then re-use the old bearer. | Fixed and covered by regression test; production deployment will intentionally sign out existing sessions. |
 | Headerless JSON crossed the 6 MiB policy | Stream a valid oversized login body without `Content-Length` through local full-app ASGI. | Fixed and deployed with an outer bounded pre-buffer/replay middleware and full-app regression coverage. |
@@ -88,15 +93,14 @@ Official control references: [Railway plans](https://docs.railway.com/pricing/pl
 
 ## Remaining risks and owner actions
 
-1. Confirm the final synthetic production create/export/delete flow and the small real DeepSeek charge.
-2. Confirm whether to enable the DeepSeek native CNY 10 balance warning. This does not recharge or change payment details.
-3. Before the Railway trial expires or consumes its remaining credit, decide personally whether to buy a plan. The review will not purchase, bind payment, recharge, or upgrade.
-4. Move local handoff values into the password manager, rotate owner and provider credentials, validate, then explicitly authorize plaintext-file deletion if desired.
-5. Confirm the lowercase Railway `deepseek-api-key` variable is unused before explicitly authorizing removal.
-6. Restore TOTP before any student pilot and verify a fresh two-factor login plus old-session rejection.
-7. Complete provider data-processing, retention, benchmark, and commercial checks before enabling Pangram or Copyleaks or making accuracy claims.
-8. Treat the selected security review as partial. The deferred limiter-state candidate and Railway edge request limits need focused staging follow-up.
+1. Rotate the owner password because browser autofill exposed its value to the automation channel during the post-logout check. Store the replacement in the password manager, deploy only its Argon2id hash, verify fresh login, and disable saved-password autofill for this origin.
+2. Before the Railway trial expires or consumes its remaining credit, decide personally whether to buy a plan. The review did not purchase, bind payment, recharge, or upgrade.
+3. Move local handoff values into the password manager, rotate provider credentials on the normal 90-day schedule, validate, then explicitly authorize plaintext-file deletion if desired.
+4. Confirm the lowercase Railway `deepseek-api-key` variable is unused before explicitly authorizing removal.
+5. Restore TOTP before any student pilot and verify a fresh two-factor login plus old-session rejection.
+6. Complete provider data-processing, retention, benchmark, and commercial checks before enabling Pangram or Copyleaks or making accuracy claims.
+7. Treat the selected security review as partial. The deferred limiter-state candidate and Railway edge request limits need focused staging follow-up.
 
 ## Readiness conclusion
 
-Current status: **not yet final-accepted**. Revision `56f6e21` is pushed; Pages deployment and Production smoke both pass. Credential-free release checks, static delivery, unauthenticated isolation, selected credential audit, deployed hardening, and local test coverage pass. Owner-ready status remains blocked on a fresh password login, the final authenticated production workflow, cleanup verification, and the owner decisions listed above. This status must be updated only after those checks are observed, not inferred.
+Current status: **conditionally accepted for owner-only use**. The final authenticated production workflow, Mock labeling, DeepSeek patch, protected-content enforcement, stale-result transition, recheck, DOCX validation, deletion, logout, static delivery, unauthenticated isolation, cost alert, and local/remote gates were observed. Public/student use remains out of scope. Before continued routine owner use, rotate the owner password because of the autofill exposure recorded above; the remaining provider, TOTP, trial-plan, and partial-review items are explicit future gates rather than hidden completion claims.

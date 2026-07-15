@@ -7,7 +7,7 @@ Last verified: 2026-07-15 (Asia/Shanghai). This document contains no passwords, 
 | System | Verified state | Immediate action |
 |---|---|---|
 | Railway | `academic-writing-agent` is on a Limited Trial. Dashboard showed 22 days or USD 4.53 remaining; `api`, PostgreSQL, and Redis were online. | Do not rely on the trial for uninterrupted production. Decide whether to purchase a plan before the earlier of credit exhaustion or trial expiry. No purchase or payment change was made during acceptance. |
-| DeepSeek | The Usage page showed CNY 19.98 balance, CNY 0.01 cumulative spend, 15 requests, and 5,755 tokens. Native balance warning was off. | Enable the native low-balance warning at CNY 10 after owner confirmation. No recharge was made. |
+| DeepSeek | After production acceptance, the Usage page showed CNY 19.83 balance, CNY 0.16 cumulative spend, 26 requests, and 33,255 tokens. The native warning was reopened and verified enabled at CNY 10. | Keep the CNY 10 threshold enabled and review it monthly. No recharge or payment change was made. |
 | Pangram | Provider is disabled and no credential is configured. | Keep disabled. Configure budget controls before adding a key. |
 | Copyleaks | Provider is disabled and no credential is configured. | Keep disabled. Configure budget controls before adding a key. |
 
@@ -49,6 +49,8 @@ Hard limits are intentionally higher than soft limits. A Railway hard limit can 
 During acceptance, GitHub contained one repository variable (`PAPERLIGHT_API_BASE_URL`) and no repository or environment Actions secrets. Railway showed 20 masked service variables. The required production values were server-side, but both `deepseek-api-key` and `DEEPSEEK_API_KEY` names existed; verify the lowercase duplicate is unused, then remove it only with explicit owner confirmation.
 
 The existing `.env.local`, `data/bootstrap-owner.txt`, and `data/railway-owner.txt` files remain present. Their Windows ACLs were hardened without reading their contents: inheritance is disabled and only the current Windows user, SYSTEM, and Administrators have FullControl. They are still plaintext and should be migrated to the password manager. Deletion requires a separate owner confirmation.
+
+During the final post-logout check, saved-password autofill exposed the owner-password field value to the browser automation accessibility channel. The value is not repeated in source, documentation, test output, or the knowledge vault, and the visible field was cleared immediately. Treat this as a credential exposure: rotate the owner password, deploy only the replacement Argon2id hash, verify that old sessions fail, and disable password autofill for the production origin.
 
 ## Rotation and recovery
 

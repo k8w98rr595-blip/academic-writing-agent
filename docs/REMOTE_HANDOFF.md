@@ -16,9 +16,10 @@ GitHub Pages uses the `/academic-writing-agent` base path and the repository Act
 The following checks have passed:
 
 - Pages and its static assets return HTTP 200, and `config.js` contains the live Railway URL rather than the placeholder.
-- The 2026-07-15 hardening revision `56f6e21` passed Pages run `29361217184` and credential-free Production smoke run `29361298967`.
+- The tested deployment includes hardening revision `56f6e21`; Pages run `29361860772` and credential-free Production smoke run `29361943400` passed for the pre-acceptance documentation revision `4660861`.
 - The credential-free production smoke workflow verifies Mock detector mode, DeepSeek rewrite mode, configured owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
-- An earlier production owner flow completed with non-sensitive generated text: login, document creation, DeepSeek rewrite, semantic validation, patch acceptance, document deletion, and logout. The 2026-07-15 final acceptance flow is recorded separately and must be repeated after the hardening deployment before the current release is marked owner-ready.
+- The final 2026-07-15 owner flow completed against the hardened deployment with a 1,127-word synthetic paper: fresh login, labeled Mock analysis, fail-closed URL protection, real DeepSeek V4 patch, V4 Flash semantic validation, patch acceptance, stale-result transition, fresh reanalysis, valid DOCX export, immediate document-tree deletion, empty-workspace verification, and logout.
+- The DeepSeek native low-balance warning is enabled at CNY 10. The post-test dashboard showed CNY 19.83 balance and CNY 0.16 cumulative spend; no recharge, purchase, payment change, or plan upgrade was made.
 - Current local verification covers 37 backend/security tests, 2 frontend tests, 4 release-audit tests, type checking, the static Pages build, and expanded static secret scanning.
 
 ## Production configuration
@@ -26,6 +27,8 @@ The following checks have passed:
 The API runs with production CORS, HTTPS-only owner access, eager jobs, local volume-backed object storage, an explicitly labeled Mock detector, and server-only DeepSeek rewrite. `DATABASE_URL` and `REDIS_URL` reference the managed Railway services. No provider key is present in the frontend, Git repository, documentation, or knowledge vault.
 
 TOTP is temporarily disabled in production with `REQUIRE_TOTP=0` as of 2026-07-14. Password-only login and logout were verified against the production API. The existing TOTP secret remains configured so the second factor can be restored by setting `REQUIRE_TOTP=1` and redeploying; until then, owner access has reduced account protection.
+
+Credential follow-up: the post-logout browser check exposed the saved owner-password field value to the automation accessibility channel. No value is included in this repository. Rotate the owner password, deploy only its replacement hash, verify old-session rejection, and disable password autofill for the production origin before continued routine use.
 
 Local handoff files are ignored and untracked. Their ACL inheritance is disabled and access is restricted to the current user, SYSTEM, and Administrators, but they remain plaintext. Move the values to the owner's password manager, rotate the related credentials, and delete the handoff files only after explicit owner confirmation. Do not copy login or TOTP material into Git, GitHub variables, logs, or documentation.
 
