@@ -24,7 +24,7 @@ The initializer never replaces an existing `.env.local` unless `--force` is supp
 
 ## Provider configuration
 
-Provider keys are server-only. Set `DETECTOR_MODE=dual` after configuring both Pangram and Copyleaks, or `REWRITE_MODE=deepseek` after configuring DeepSeek. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative. The app refuses a real mode whose credentials are missing.
+Provider keys are server-only. Pangram and Copyleaks now have production adapters, normalized sentence evidence, conservative non-average fusion, and explicit partial/disagreement states. Keep `DETECTOR_MODE=mock` until both providers are configured and their data-processing terms are acknowledged; then follow `docs/PROVIDER_SETUP.md`. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative.
 
 ## Deployment
 
@@ -36,4 +36,4 @@ Provider keys are server-only. Set `DETECTOR_MODE=dual` after configuring both P
 
 This deployment remains private to the configured owner. DeepSeek rewrite is enabled, while real detector providers, public registration, payments, and student rollout remain disabled until their separate evaluation and compliance gates are complete.
 
-See `docs/ARCHITECTURE.md`, `docs/BENCHMARK.md`, `docs/DEPLOYMENT.md`, `docs/REMOTE_HANDOFF.md`, `docs/SECURITY.md`, and `docs/PROVIDER_SETUP.md`.
+See `docs/ARCHITECTURE.md`, `benchmark/README.md`, `docs/DEPLOYMENT.md`, `docs/REMOTE_HANDOFF.md`, `docs/SECURITY.md`, and `docs/PROVIDER_SETUP.md`.

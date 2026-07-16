@@ -52,8 +52,15 @@ class Settings:
     rewrite_mode: str
     pangram_api_url: str
     pangram_api_key: str
+    pangram_poll_interval_seconds: float
+    pangram_max_poll_seconds: int
     copyleaks_api_url: str
-    copyleaks_access_token: str
+    copyleaks_login_url: str
+    copyleaks_email: str
+    copyleaks_api_key: str
+    copyleaks_sandbox: bool
+    copyleaks_sensitivity: int
+    detector_data_processing_acknowledged: bool
     deepseek_base_url: str
     deepseek_api_key: str
     deepseek_model: str
@@ -92,10 +99,17 @@ def get_settings() -> Settings:
         redis_url=os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
         detector_mode=os.getenv("DETECTOR_MODE", "mock").strip().lower(),
         rewrite_mode=os.getenv("REWRITE_MODE", "mock").strip().lower(),
-        pangram_api_url=os.getenv("PANGRAM_API_URL", "https://api.pangram.com/v1/predict"),
+        pangram_api_url=os.getenv("PANGRAM_API_URL", "https://text.external-api.pangram.com"),
         pangram_api_key=os.getenv("PANGRAM_API_KEY", ""),
-        copyleaks_api_url=os.getenv("COPYLEAKS_API_URL", "https://api.copyleaks.com/v2/writer-detector"),
-        copyleaks_access_token=os.getenv("COPYLEAKS_ACCESS_TOKEN", ""),
+        pangram_poll_interval_seconds=float(os.getenv("PANGRAM_POLL_INTERVAL_SECONDS", "0.75")),
+        pangram_max_poll_seconds=int(os.getenv("PANGRAM_MAX_POLL_SECONDS", "45")),
+        copyleaks_api_url=os.getenv("COPYLEAKS_API_URL", "https://api.copyleaks.com"),
+        copyleaks_login_url=os.getenv("COPYLEAKS_LOGIN_URL", "https://id.copyleaks.com/v3/account/login/api"),
+        copyleaks_email=os.getenv("COPYLEAKS_EMAIL", "").strip().lower(),
+        copyleaks_api_key=os.getenv("COPYLEAKS_API_KEY", ""),
+        copyleaks_sandbox=_bool("COPYLEAKS_SANDBOX", False),
+        copyleaks_sensitivity=int(os.getenv("COPYLEAKS_SENSITIVITY", "2")),
+        detector_data_processing_acknowledged=_bool("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", False),
         deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
         deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro"),
@@ -120,4 +134,36 @@ def get_settings() -> Settings:
             raise RuntimeError("Production DeepSeek base URL must use the official HTTPS API host")
         if settings.deepseek_model != "deepseek-v4-pro" or settings.deepseek_validator_model != "deepseek-v4-flash":
             raise RuntimeError("Production DeepSeek mode requires the approved V4 Pro and V4 Flash model pair")
+    if settings.detector_mode not in {"mock", "pangram", "copyleaks", "dual"}:
+        raise RuntimeError("DETECTOR_MODE must be mock, pangram, copyleaks, or dual")
+    if not 1 <= settings.copyleaks_sensitivity <= 3:
+        raise RuntimeError("COPYLEAKS_SENSITIVITY must be between 1 and 3")
+    if settings.pangram_poll_interval_seconds <= 0 or settings.pangram_max_poll_seconds <= 0:
+        raise RuntimeError("Pangram polling settings must be positive")
+    if settings.is_production and settings.detector_mode in {"pangram", "dual"}:
+        _require_official_endpoint(settings.pangram_api_url, "text.external-api.pangram.com", "Pangram", {""})
+    if settings.is_production and settings.detector_mode in {"copyleaks", "dual"}:
+        _require_official_endpoint(settings.copyleaks_api_url, "api.copyleaks.com", "Copyleaks", {""})
+        _require_official_endpoint(
+            settings.copyleaks_login_url,
+            "id.copyleaks.com",
+            "Copyleaks login",
+            {"/v3/account/login/api"},
+        )
     return settings
+
+
+def _require_official_endpoint(value: str, hostname: str, label: str, allowed_paths: set[str]) -> None:
+    parsed = urlsplit(value)
+    normalized_path = parsed.path.rstrip("/")
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != hostname
+        or parsed.port not in {None, 443}
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or normalized_path not in allowed_paths
+    ):
+        raise RuntimeError(f"Production {label} URL must use the official HTTPS API host")

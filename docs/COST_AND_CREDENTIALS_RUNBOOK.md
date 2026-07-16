@@ -8,8 +8,8 @@ Last verified: 2026-07-15 (Asia/Shanghai). This document contains no passwords, 
 |---|---|---|
 | Railway | `academic-writing-agent` is on a Limited Trial. Dashboard showed 22 days or USD 4.53 remaining; `api`, PostgreSQL, and Redis were online. | Do not rely on the trial for uninterrupted production. Decide whether to purchase a plan before the earlier of credit exhaustion or trial expiry. No purchase or payment change was made during acceptance. |
 | DeepSeek | After production acceptance, the Usage page showed CNY 19.83 balance, CNY 0.16 cumulative spend, 26 requests, and 33,255 tokens. The native warning was reopened and verified enabled at CNY 10. | Keep the CNY 10 threshold enabled and review it monthly. No recharge or payment change was made. |
-| Pangram | Provider is disabled and no credential is configured. | Keep disabled. Configure budget controls before adding a key. |
-| Copyleaks | Provider is disabled and no credential is configured. | Keep disabled. Configure budget controls before adding a key. |
+| Pangram | Production adapter is implemented, but production remains in Mock mode and no credential has been supplied for this integration. | Keep disabled until the applicable DPA/retention terms and budget controls are confirmed. |
+| Copyleaks | Production adapter and 48-hour token exchange are implemented, but production remains in Mock mode and no credential has been supplied for this integration. | Keep disabled until `/v2/writer-detector` retention/deletion terms and the account's API pricing are confirmed. |
 
 The observed values are a point-in-time dashboard reading, not an accounting record. Re-check the provider dashboard before making a purchase decision.
 
@@ -20,7 +20,7 @@ The observed values are a point-in-time dashboard reading, not an accounting rec
 | Railway | USD 0.50 usage increase | USD 2 | USD 10 | USD 15 | Workspace Usage email threshold; a hard limit can stop services | Daily dashboard check while on trial; preserve login/view/export/delete if paid model calls are paused |
 | DeepSeek | CNY 1 | CNY 5 | CNY 10 | CNY 20 | Low-balance warning at CNY 10; Usage/Billing history | Pause new rewrites at the hard limit or balance below CNY 2; keep Mock detection and document management available |
 | Pangram | 20 credits / USD 1 | 100 credits / USD 5 | 300 credits / USD 15 | 500 credits / USD 25 | Credit balance and optional auto-refill; auto-refill must remain off initially | Refuse new scans at 100 credits remaining; preserve existing reports |
-| Copyleaks | 80 credits | 400 credits | 800 credits | 1,200 credits | Credits balance, check-credits, usage history, optional replenish budget | Refuse new scans at 200 credits remaining; reconcile webhook charge against the job record |
+| Copyleaks | 80 credits | 400 credits | 800 credits | 1,200 credits | Credits balance, usage history, optional replenish budget | Refuse new scans at 200 credits remaining; reconcile synchronous scan usage against the analysis record |
 
 Railway cost controls and pricing are documented in [Plans](https://docs.railway.com/pricing/plans), [Project usage](https://docs.railway.com/projects/project-usage), and [Cost control](https://docs.railway.com/pricing/cost-control). DeepSeek exposes [pricing](https://api-docs.deepseek.com/quick_start/pricing), [balance](https://api-docs.deepseek.com/zh-cn/api/get-user-balance/), [rate limits](https://api-docs.deepseek.com/quick_start/rate_limit/), and [error codes](https://api-docs.deepseek.com/quick_start/error_codes). Pangram publishes its [API credit model](https://www.pangram.com/solutions/api) and [bulk API](https://docs.pangram.com/api-reference/bulk-api). Copyleaks documents [credit management](https://docs.copyleaks.com/concepts/management/manage-your-credits/), [rate limits](https://docs.copyleaks.com/using-the-apis/rate-limits/), and [failure handling](https://docs.copyleaks.com/concepts/performance/handling-failures/).
 
@@ -31,7 +31,7 @@ Hard limits are intentionally higher than soft limits. A Railway hard limit can 
 - Hourly call volume warning: more than `max(10, 3 × the trailing seven-day hourly median)` paid calls.
 - Circuit-breaker trigger: more than `max(20, 5 × median)` paid calls in one hour, five consecutive transient provider failures, or a retry rate above 10% with at least ten calls in fifteen minutes.
 - Duplicate-work alert: more than one paid task for the same `owner + document_version + provider + operation` idempotency key in 24 hours, or more than two distinct paid task ids for the same document version/provider in fifteen minutes.
-- Retry policy: initial attempt plus at most one retry, exponential backoff with jitter, honor `Retry-After`, and never retry 400, 401, 402, 403, or 422.
+- Retry policy: initial attempt plus at most one retry, bounded exponential backoff, honor a short `Retry-After`, and never retry 400, 401, 402, 403, or 422. Pangram task creation is submitted only once because its official API does not document an idempotency header; only polling is retried.
 - Breaker behavior: pause new paid tasks for fifteen minutes. Login, view, export, immediate deletion, and already-generated reports remain available.
 - Review cadence: check dashboards daily while on the Railway trial; reconcile request count and charges weekly; review monthly limits and keys on the first day of each month.
 
@@ -47,6 +47,8 @@ Hard limits are intentionally higher than soft limits. A Railway hard limit can 
 | `data/*-owner.txt` | One-time bootstrap only | Long-term credential storage |
 
 During acceptance, GitHub contained one repository variable (`PAPERLIGHT_API_BASE_URL`) and no repository or environment Actions secrets. Railway showed 20 masked service variables. The required production values were server-side, but both `deepseek-api-key` and `DEEPSEEK_API_KEY` names existed; verify the lowercase duplicate is unused, then remove it only with explicit owner confirmation.
+
+For real detectors, only Railway `api` Variables may contain `PANGRAM_API_KEY`, `COPYLEAKS_EMAIL`, and `COPYLEAKS_API_KEY`. Copyleaks access tokens are generated at runtime, cached only in process memory, and must not become a Railway variable. `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=1` may be set only after both suppliers' applicable terms are reviewed; it contains no secret but records a release decision.
 
 The existing `.env.local`, `data/bootstrap-owner.txt`, and `data/railway-owner.txt` files remain present. Their Windows ACLs were hardened without reading their contents: inheritance is disabled and only the current Windows user, SYSTEM, and Administrators have FullControl. They are still plaintext and should be migrated to the password manager. Deletion requires a separate owner confirmation.
 

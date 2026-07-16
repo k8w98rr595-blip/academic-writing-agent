@@ -1,0 +1,20 @@
+{
+  "sampleId": "replace_with_pseudonymous_id",
+  "datasetVersion": "1.0.0",
+  "status": "active",
+  "split": "private_eval",
+  "body": {"path": "corpus/private/replace.txt", "sha256": null, "encoding": "utf-8", "wordCount": 0, "characterCount": 0},
+  "provenance": {
+    "sourceType": "explicit_donation",
+    "sourceReference": "internal-consent-record-id-only",
+    "authorization": "written benchmark-evaluation consent; public redistribution prohibited",
+    "processLabel": "human_independent",
+    "labelBasis": "contemporaneous process declaration and revision history reviewed by two curators",
+    "generation": {"models": [], "promptSummary": null},
+    "humanEditing": {"method": "independent drafting", "estimatedChangedFraction": null}
+  },
+  "profile": {"discipline": "social_science", "level": "undergraduate_upper", "writingAbility": "typical", "nativeEnglish": "no", "lengthBand": "medium", "textType": "course_essay"},
+  "features": {"formulas": false, "citations": true, "tables": false, "abbreviations": true, "specialistTerms": true, "templateDriven": false},
+  "gold": {"documentClass": "human", "aiFraction": 0.0, "aiSpans": []},
+  "governance": {"visibility": "restricted", "claimEligible": true, "providerAccess": "approved_evaluation_window", "rewriteModelAccess": "never", "piiReviewed": true}
+}

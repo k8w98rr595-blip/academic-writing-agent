@@ -53,3 +53,7 @@ The manual `Production smoke` workflow is the remote acceptance check when the l
 ## Deliberate future gates
 
 Pangram and Copyleaks credentials remain unset. Real detector claims, a Turnitin comparison, public registration, payments, refunds, student uploads, provider data-processing agreements, retention guarantees, benchmark calibration, and China-facing compliance are not part of this owner-only release and must be completed before public rollout. DeepSeek production access must remain server-only and subject to the same data-processing and retention review before any student pilot.
+
+## Real detector implementation handoff (2026-07-16)
+
+The source now contains current Pangram async-task and Copyleaks synchronous-text adapters, a 48-hour Copyleaks token cache, strict response/range validation, bounded retries, conservative non-average fusion, explicit disagreement/partial states, and deep-blue/light-blue evidence rendering. Production remains on `DETECTOR_MODE=mock`; no Pangram or Copyleaks key was added or used. Follow `docs/PROVIDER_SETUP.md` only after reviewing `docs/DETECTOR_PROVIDERS.md`, then run the cost-confirmed synthetic acceptance script before reporting real detection available.

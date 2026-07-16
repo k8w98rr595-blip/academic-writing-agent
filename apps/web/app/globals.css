@@ -193,6 +193,11 @@ mark.evidence.single { background: var(--blue-pale); color: #1c2b43; box-shadow:
 .score-row b { font-size: 13px; }
 .score-scale { height: 6px; margin: 18px 0 11px; overflow: hidden; background: #deddd8; }
 .score-scale span { display: block; height: 100%; background: var(--blue); }
+.score-scale.unavailable { background: repeating-linear-gradient(135deg, #e0dfda 0 6px, #efeee9 6px 12px); }
+.detection-alert { display: grid; gap: 4px; margin: 0 0 16px; padding: 11px 12px; border: 1px solid var(--line-strong); font-size: 9px; line-height: 1.5; }
+.detection-alert strong { font-size: 10px; }
+.detection-alert.disagreement { border-color: #d9a351; background: #fff7e8; color: #71470b; }
+.detection-alert.unavailable { border-color: #d7a8a8; background: #fff3f1; color: #812b2b; }
 .evidence-legend { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; color: var(--muted); font-size: 9px; }
 .evidence-legend span { display: flex; align-items: center; gap: 6px; }
 .evidence-legend i { width: 9px; height: 9px; display: block; background: var(--blue-pale); }
@@ -205,6 +210,11 @@ mark.evidence.single { background: var(--blue-pale); color: #1c2b43; box-shadow:
 .provider-row strong { font-size: 10px; }
 .provider-row small { color: var(--muted); font-size: 8px; }
 .provider-row > span { color: var(--blue); font-size: 11px; font-weight: 800; }
+.provider-row.failed > span, .provider-error { color: var(--danger); }
+.provider-error { max-width: 240px; line-height: 1.45; }
+.detection-warnings { margin: -8px 0 22px; padding: 11px 13px; border: 1px solid #d8c9a8; background: #fffaf0; }
+.detection-warnings h3 { margin: 0 0 7px; font-size: 10px; }
+.detection-warnings ul { margin: 0; padding-left: 16px; color: #6d5b38; font-size: 8px; line-height: 1.55; }
 .quality-checks { margin: 0 0 22px; padding: 1px 13px 13px; border: 1px solid var(--line); background: #f8f7f3; }
 .quality-checks > div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; color: var(--muted); font-size: 9px; }
 .quality-checks > div strong { color: var(--ink); text-align: right; }

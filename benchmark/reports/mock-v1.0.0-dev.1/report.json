@@ -1,0 +1,947 @@
+{
+  "bootstrapIterations": 500,
+  "claimStatus": "development-only",
+  "coverage": {
+    "activeSamples": 4,
+    "claimEligibleSamples": 0,
+    "classes": {
+      "ai": 2,
+      "human": 2
+    },
+    "disciplines": {
+      "business_economics": 1,
+      "computer_engineering": 1,
+      "law_public_policy": 1,
+      "medicine_life_science": 1
+    },
+    "processLabels": {
+      "ai_generated": 2,
+      "human_independent": 2
+    },
+    "splits": {
+      "public_dev": 4
+    }
+  },
+  "datasetVersion": "1.0.0-dev.1",
+  "decisionThreshold": 0.5,
+  "disclaimer": "Detector scores are probabilistic risk signals. They are not authorship facts or academic-misconduct judgments.",
+  "limitations": [
+    "Public development text may be present in provider training data and cannot establish contamination-free performance.",
+    "The development corpus is too small and unrepresentative for product accuracy or threshold claims.",
+    "Hybrid, translation, non-native-English, template-heavy, and all-discipline coverage must be populated with verified private/blind samples."
+  ],
+  "manifestDigest": "c16c44abdb7d9cb5dfbb232b0bbc19cb729f873c8889b53b83a52f4d3b6eb71b",
+  "providerAgreement": [
+    {
+      "agreementRate": 0.5,
+      "left": "Mock Primary",
+      "leftVersions": [
+        "mock-v2"
+      ],
+      "matrix": {
+        "bothNegative": 1,
+        "bothPositive": 1,
+        "leftNegativeRightPositive": 0,
+        "leftPositiveRightNegative": 2
+      },
+      "meanAbsoluteScoreDifference": 0.14,
+      "n": 4,
+      "right": "Mock Review",
+      "rightVersions": [
+        "mock-v2"
+      ],
+      "threshold": 0.5
+    }
+  ],
+  "providers": [
+    {
+      "attempted": 4,
+      "document": {
+        "aiN": 2,
+        "atThreshold": {
+          "accuracy": 0.75,
+          "f1": 0.8,
+          "fn": 0,
+          "fnr": 0.0,
+          "fp": 1,
+          "fpr": 0.5,
+          "precision": 0.6666666666666666,
+          "recall": 1.0,
+          "threshold": 0.5,
+          "tn": 1,
+          "tp": 2
+        },
+        "atThreshold95CI": {
+          "accuracy": {
+            "estimate": 0.75,
+            "high": 1.0,
+            "low": 0.25,
+            "validReplicates": 500
+          },
+          "f1": {
+            "estimate": 0.8,
+            "high": 1.0,
+            "low": 0.4,
+            "validReplicates": 469
+          },
+          "fnr": {
+            "estimate": 0.0,
+            "high": 0.0,
+            "low": 0.0,
+            "validReplicates": 481
+          },
+          "fpr": {
+            "estimate": 0.5,
+            "high": 1.0,
+            "low": 0.0,
+            "validReplicates": 466
+          },
+          "precision": {
+            "estimate": 0.6666666666666666,
+            "high": 1.0,
+            "low": 0.0,
+            "validReplicates": 498
+          },
+          "recall": {
+            "estimate": 1.0,
+            "high": 1.0,
+            "low": 1.0,
+            "validReplicates": 466
+          }
+        },
+        "auprc": {
+          "estimate": 0.8333333333333333,
+          "high": 1.0,
+          "low": 0.3333333333333333,
+          "validReplicates": 457
+        },
+        "auroc": {
+          "estimate": 0.75,
+          "high": 1.0,
+          "low": 0.0,
+          "validReplicates": 431
+        },
+        "binaryN": 4,
+        "brier": {
+          "estimate": 0.17912499999999998,
+          "high": 0.397825,
+          "low": 0.03424999999999999,
+          "validReplicates": 500
+        },
+        "calibrationScoreN": 4,
+        "ece": {
+          "estimate": 0.3625,
+          "high": 0.5875,
+          "low": 0.1825,
+          "validReplicates": 500
+        },
+        "humanN": 2,
+        "n": 4,
+        "softTargetN": 4,
+        "thresholdCurve": [
+          {
+            "accuracy": 0.5,
+            "f1": 0.6666666666666666,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 2,
+            "fpr": 1.0,
+            "precision": 0.5,
+            "recall": 1.0,
+            "threshold": 0.1,
+            "tn": 0,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.8,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 1,
+            "fpr": 0.5,
+            "precision": 0.6666666666666666,
+            "recall": 1.0,
+            "threshold": 0.2,
+            "tn": 1,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.8,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 1,
+            "fpr": 0.5,
+            "precision": 0.6666666666666666,
+            "recall": 1.0,
+            "threshold": 0.3,
+            "tn": 1,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.8,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 1,
+            "fpr": 0.5,
+            "precision": 0.6666666666666666,
+            "recall": 1.0,
+            "threshold": 0.4,
+            "tn": 1,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.8,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 1,
+            "fpr": 0.5,
+            "precision": 0.6666666666666666,
+            "recall": 1.0,
+            "threshold": 0.5,
+            "tn": 1,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.8,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 1,
+            "fpr": 0.5,
+            "precision": 0.6666666666666666,
+            "recall": 1.0,
+            "threshold": 0.6,
+            "tn": 1,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.5,
+            "f1": 0.5,
+            "fn": 1,
+            "fnr": 0.5,
+            "fp": 1,
+            "fpr": 0.5,
+            "precision": 0.5,
+            "recall": 0.5,
+            "threshold": 0.7,
+            "tn": 1,
+            "tp": 1
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.6666666666666666,
+            "fn": 1,
+            "fnr": 0.5,
+            "fp": 0,
+            "fpr": 0.0,
+            "precision": 1.0,
+            "recall": 0.5,
+            "threshold": 0.8,
+            "tn": 2,
+            "tp": 1
+          },
+          {
+            "accuracy": 0.5,
+            "f1": null,
+            "fn": 2,
+            "fnr": 1.0,
+            "fp": 0,
+            "fpr": 0.0,
+            "precision": null,
+            "recall": 0.0,
+            "threshold": 0.9,
+            "tn": 2,
+            "tp": 0
+          }
+        ]
+      },
+      "failures": {},
+      "groups": {
+        "discipline": [
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "business_economics"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "computer_engineering"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "law_public_policy"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "medicine_life_science"
+          }
+        ],
+        "feature:abbreviations": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "false"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "true"
+          }
+        ],
+        "feature:citations": [
+          {
+            "metrics": null,
+            "n": 4,
+            "suppressed": true,
+            "value": "false"
+          }
+        ],
+        "feature:formulas": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "false"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "true"
+          }
+        ],
+        "feature:specialistTerms": [
+          {
+            "metrics": null,
+            "n": 4,
+            "suppressed": true,
+            "value": "true"
+          }
+        ],
+        "feature:tables": [
+          {
+            "metrics": null,
+            "n": 4,
+            "suppressed": true,
+            "value": "false"
+          }
+        ],
+        "feature:templateDriven": [
+          {
+            "metrics": null,
+            "n": 3,
+            "suppressed": true,
+            "value": "false"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "true"
+          }
+        ],
+        "lengthBand": [
+          {
+            "metrics": null,
+            "n": 4,
+            "suppressed": true,
+            "value": "short"
+          }
+        ],
+        "level": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "historical_reference"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "synthetic_fixture"
+          }
+        ],
+        "nativeEnglish": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "not_applicable"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "yes"
+          }
+        ],
+        "processLabel": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "ai_generated"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "human_independent"
+          }
+        ],
+        "textType": [
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "case_analysis"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "historical_reference"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "technical_report"
+          }
+        ],
+        "writingAbility": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "advanced"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "unknown"
+          }
+        ]
+      },
+      "isMock": true,
+      "provider": "Mock Primary",
+      "providerVersions": [
+        "mock-v2"
+      ],
+      "span95CI": {
+        "dice": {
+          "estimate": 0.9463635221705816,
+          "high": 1.0,
+          "low": 0.0,
+          "validReplicates": 498
+        },
+        "f1": {
+          "estimate": 0.96875,
+          "high": 1.0,
+          "low": 0.8421052631578948,
+          "validReplicates": 469
+        },
+        "iou": {
+          "estimate": 0.8981878874582737,
+          "high": 1.0,
+          "low": 0.0,
+          "validReplicates": 498
+        },
+        "precision": {
+          "estimate": 0.9393939393939394,
+          "high": 1.0,
+          "low": 0.0,
+          "validReplicates": 497
+        },
+        "recall": {
+          "estimate": 1.0,
+          "high": 1.0,
+          "low": 1.0,
+          "validReplicates": 470
+        }
+      },
+      "spans": {
+        "rangeOverlap": {
+          "dice": 0.9463635221705816,
+          "goldCharacters": 3767,
+          "intersectionCharacters": 3767,
+          "iou": 0.8981878874582737,
+          "predictedCharacters": 4194
+        },
+        "sentence": {
+          "f1": 0.96875,
+          "fn": 0,
+          "fp": 2,
+          "precision": 0.9393939393939394,
+          "recall": 1.0,
+          "tn": 13,
+          "tp": 31
+        }
+      },
+      "successful": 4
+    },
+    {
+      "attempted": 4,
+      "document": {
+        "aiN": 2,
+        "atThreshold": {
+          "accuracy": 0.75,
+          "f1": 0.6666666666666666,
+          "fn": 1,
+          "fnr": 0.5,
+          "fp": 0,
+          "fpr": 0.0,
+          "precision": 1.0,
+          "recall": 0.5,
+          "threshold": 0.5,
+          "tn": 2,
+          "tp": 1
+        },
+        "atThreshold95CI": {
+          "accuracy": {
+            "estimate": 0.75,
+            "high": 1.0,
+            "low": 0.25,
+            "validReplicates": 500
+          },
+          "f1": {
+            "estimate": 0.6666666666666666,
+            "high": 1.0,
+            "low": 0.5,
+            "validReplicates": 346
+          },
+          "fnr": {
+            "estimate": 0.5,
+            "high": 1.0,
+            "low": 0.0,
+            "validReplicates": 468
+          },
+          "fpr": {
+            "estimate": 0.0,
+            "high": 0.0,
+            "low": 0.0,
+            "validReplicates": 470
+          },
+          "precision": {
+            "estimate": 1.0,
+            "high": 1.0,
+            "low": 1.0,
+            "validReplicates": 329
+          },
+          "recall": {
+            "estimate": 0.5,
+            "high": 1.0,
+            "low": 0.0,
+            "validReplicates": 471
+          }
+        },
+        "auprc": {
+          "estimate": 0.8333333333333333,
+          "high": 1.0,
+          "low": 0.3333333333333333,
+          "validReplicates": 477
+        },
+        "auroc": {
+          "estimate": 0.75,
+          "high": 1.0,
+          "low": 0.0,
+          "validReplicates": 447
+        },
+        "binaryN": 4,
+        "brier": {
+          "estimate": 0.17112500000000003,
+          "high": 0.28925,
+          "low": 0.050699999999999995,
+          "validReplicates": 500
+        },
+        "calibrationScoreN": 4,
+        "ece": {
+          "estimate": 0.14250000000000002,
+          "high": 0.5025000000000001,
+          "low": 0.05500000000000005,
+          "validReplicates": 500
+        },
+        "humanN": 2,
+        "n": 4,
+        "softTargetN": 4,
+        "thresholdCurve": [
+          {
+            "accuracy": 0.5,
+            "f1": 0.6666666666666666,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 2,
+            "fpr": 1.0,
+            "precision": 0.5,
+            "recall": 1.0,
+            "threshold": 0.1,
+            "tn": 0,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.5,
+            "f1": 0.6666666666666666,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 2,
+            "fpr": 1.0,
+            "precision": 0.5,
+            "recall": 1.0,
+            "threshold": 0.2,
+            "tn": 0,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.8,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 1,
+            "fpr": 0.5,
+            "precision": 0.6666666666666666,
+            "recall": 1.0,
+            "threshold": 0.3,
+            "tn": 1,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.8,
+            "fn": 0,
+            "fnr": 0.0,
+            "fp": 1,
+            "fpr": 0.5,
+            "precision": 0.6666666666666666,
+            "recall": 1.0,
+            "threshold": 0.4,
+            "tn": 1,
+            "tp": 2
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.6666666666666666,
+            "fn": 1,
+            "fnr": 0.5,
+            "fp": 0,
+            "fpr": 0.0,
+            "precision": 1.0,
+            "recall": 0.5,
+            "threshold": 0.5,
+            "tn": 2,
+            "tp": 1
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.6666666666666666,
+            "fn": 1,
+            "fnr": 0.5,
+            "fp": 0,
+            "fpr": 0.0,
+            "precision": 1.0,
+            "recall": 0.5,
+            "threshold": 0.6,
+            "tn": 2,
+            "tp": 1
+          },
+          {
+            "accuracy": 0.75,
+            "f1": 0.6666666666666666,
+            "fn": 1,
+            "fnr": 0.5,
+            "fp": 0,
+            "fpr": 0.0,
+            "precision": 1.0,
+            "recall": 0.5,
+            "threshold": 0.7,
+            "tn": 2,
+            "tp": 1
+          },
+          {
+            "accuracy": 0.5,
+            "f1": null,
+            "fn": 2,
+            "fnr": 1.0,
+            "fp": 0,
+            "fpr": 0.0,
+            "precision": null,
+            "recall": 0.0,
+            "threshold": 0.8,
+            "tn": 2,
+            "tp": 0
+          },
+          {
+            "accuracy": 0.5,
+            "f1": null,
+            "fn": 2,
+            "fnr": 1.0,
+            "fp": 0,
+            "fpr": 0.0,
+            "precision": null,
+            "recall": 0.0,
+            "threshold": 0.9,
+            "tn": 2,
+            "tp": 0
+          }
+        ]
+      },
+      "failures": {},
+      "groups": {
+        "discipline": [
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "business_economics"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "computer_engineering"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "law_public_policy"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "medicine_life_science"
+          }
+        ],
+        "feature:abbreviations": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "false"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "true"
+          }
+        ],
+        "feature:citations": [
+          {
+            "metrics": null,
+            "n": 4,
+            "suppressed": true,
+            "value": "false"
+          }
+        ],
+        "feature:formulas": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "false"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "true"
+          }
+        ],
+        "feature:specialistTerms": [
+          {
+            "metrics": null,
+            "n": 4,
+            "suppressed": true,
+            "value": "true"
+          }
+        ],
+        "feature:tables": [
+          {
+            "metrics": null,
+            "n": 4,
+            "suppressed": true,
+            "value": "false"
+          }
+        ],
+        "feature:templateDriven": [
+          {
+            "metrics": null,
+            "n": 3,
+            "suppressed": true,
+            "value": "false"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "true"
+          }
+        ],
+        "lengthBand": [
+          {
+            "metrics": null,
+            "n": 4,
+            "suppressed": true,
+            "value": "short"
+          }
+        ],
+        "level": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "historical_reference"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "synthetic_fixture"
+          }
+        ],
+        "nativeEnglish": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "not_applicable"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "yes"
+          }
+        ],
+        "processLabel": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "ai_generated"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "human_independent"
+          }
+        ],
+        "textType": [
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "case_analysis"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "historical_reference"
+          },
+          {
+            "metrics": null,
+            "n": 1,
+            "suppressed": true,
+            "value": "technical_report"
+          }
+        ],
+        "writingAbility": [
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "advanced"
+          },
+          {
+            "metrics": null,
+            "n": 2,
+            "suppressed": true,
+            "value": "unknown"
+          }
+        ]
+      },
+      "isMock": true,
+      "provider": "Mock Review",
+      "providerVersions": [
+        "mock-v2"
+      ],
+      "span95CI": {
+        "dice": {
+          "estimate": 0.6591920270510767,
+          "high": 1.0,
+          "low": 0.0,
+          "validReplicates": 462
+        },
+        "f1": {
+          "estimate": 0.6808510638297872,
+          "high": 1.0,
+          "low": 0.4155844155844155,
+          "validReplicates": 348
+        },
+        "iou": {
+          "estimate": 0.49163790814972125,
+          "high": 1.0,
+          "low": 0.0,
+          "validReplicates": 477
+        },
+        "precision": {
+          "estimate": 1.0,
+          "high": 1.0,
+          "low": 1.0,
+          "validReplicates": 336
+        },
+        "recall": {
+          "estimate": 0.5161290322580645,
+          "high": 1.0,
+          "low": 0.0,
+          "validReplicates": 458
+        }
+      },
+      "spans": {
+        "rangeOverlap": {
+          "dice": 0.6591920270510767,
+          "goldCharacters": 3767,
+          "intersectionCharacters": 1852,
+          "iou": 0.49163790814972125,
+          "predictedCharacters": 1852
+        },
+        "sentence": {
+          "f1": 0.6808510638297872,
+          "fn": 15,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.5161290322580645,
+          "tn": 15,
+          "tp": 16
+        }
+      },
+      "successful": 4
+    }
+  ],
+  "reportSchemaVersion": "1.0.0",
+  "seed": 20260716,
+  "thresholdRecommendation": {
+    "available": false,
+    "byProvider": [],
+    "falseNegativeCostWeight": 1,
+    "falsePositiveCostWeight": 5,
+    "reason": "Requires a claim-eligible private-evaluation slice with at least 200 verified human and 200 verified AI samples and real provider runs. Any candidate must then be frozen and confirmed on the untouched blind set."
+  }
+}

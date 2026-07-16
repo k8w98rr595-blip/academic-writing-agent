@@ -38,7 +38,7 @@ def run_analysis_job(job_id: str, analysis_id: str) -> str:
         version = get_version(db, document, analysis.version_id)
         job.status = "running"
         analysis.status = "running"
-        result = asyncio.run(run_detection(version.paragraphs))
+        result = asyncio.run(run_detection(version.paragraphs, idempotency_key=analysis.id))
         analysis.result = result
         analysis.status = "completed"
         analysis.completed_at = utcnow()

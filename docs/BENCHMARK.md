@@ -1,25 +1,11 @@
-# AI-like writing detector benchmark gate
+# AI detector benchmark gate
 
-真实检测功能上线前必须冻结独立测试集，避免用开发样本调参后自我验证。
+The canonical benchmark implementation now lives in [`benchmark/`](../benchmark/README.md). Real detector activation and product claims require a frozen, independent dataset rather than tuning and validating on the same texts.
 
-## 数据切分
+- Public development fixtures exercise the code but are contamination-exposed and non-claimable.
+- Private evaluation samples require permission, de-identification, process evidence, and separation from rewrite models.
+- The sealed final set is one-use, threshold-independent, and inaccessible to providers until an approved retention-controlled evaluation window.
+- Reports must include discrimination, calibration, human false positives, AI false negatives, sentence/range evidence, groups, confidence intervals, agreement, threshold sensitivity, and version drift.
+- A detector score is a probabilistic risk signal, not an authorship label or disciplinary judgment.
 
-- 人类原稿：不同学校、专业、母语背景和成绩区间的英文课程论文，取得明确授权并去标识化。
-- AI 原稿：记录模型、版本、提示和生成日期。
-- 混合稿：保留人工修改比例、引用密度、段落长度和编辑历史。
-- 压力集：非母语写作、模板化实验报告、短句、强引用段落和高度编辑后的文本。
-- 所有同一作者或同一题目的版本只能出现在一个数据切分中。
-
-## 指标
-
-- 文档级：AUROC、AUPRC、Brier score、校准误差、固定低误报率下的召回率。
-- 句子级：范围重叠 F1、误报句比例和 Provider 一致率。
-- 分组：专业、母语背景、长度、引用密度和写作成绩的误报差异。
-- 稳定性：同一文本重复请求、Provider 版本更新、轻微排版变化和可接受人工编辑后的漂移。
-
-## 上线规则
-
-- 不以单一准确率宣传能力；必须同时报告误报、校准和分组结果。
-- Provider 版本变化后自动进入观察模式，重新运行冻结基准。
-- 未通过门槛时仅显示“实验性估计”，不用于纪律判断，也不提供保证降分文案。
-- 基准语料不得进入日志、公开仓库或未签数据协议的第三方服务。
+Use `benchmark/DATA_DICTIONARY.md`, `benchmark/GOVERNANCE.md`, and `benchmark/collection-plan.csv` as the data and sampling contracts.

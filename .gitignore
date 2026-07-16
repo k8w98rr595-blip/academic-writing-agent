@@ -22,6 +22,20 @@ data/
 *.db
 *.sqlite*
 
+# Benchmark restricted data (metadata templates may be committed; text may not)
+benchmark/corpus/private/**
+benchmark/corpus/blind/**
+benchmark/manifests/private/**
+benchmark/manifests/blind/**
+benchmark/predictions/private/**
+benchmark/predictions/blind/**
+!benchmark/corpus/private/.gitkeep
+!benchmark/corpus/blind/.gitkeep
+!benchmark/manifests/private/.gitkeep
+!benchmark/manifests/blind/.gitkeep
+!benchmark/predictions/private/.gitkeep
+!benchmark/predictions/blind/.gitkeep
+
 # Editors and OS
 .DS_Store
 Thumbs.db

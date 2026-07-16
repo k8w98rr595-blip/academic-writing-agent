@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paperlight.local/schemas/benchmark-prediction-v1.json",
+  "title": "Paperlight benchmark detector prediction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["datasetVersion", "runId", "sampleId", "provider", "providerVersion", "status", "score", "spans", "isMock", "latencyMs", "createdAt"],
+  "properties": {
+    "datasetVersion": {"type": "string"}, "runId": {"type": "string"}, "sampleId": {"type": "string"},
+    "provider": {"type": "string"}, "providerVersion": {"type": "string"}, "status": {"enum": ["success", "failed"]},
+    "score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "spans": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["start", "end", "score"], "properties": {"start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 1}, "score": {"type": "number", "minimum": 0, "maximum": 1}}}},
+    "isMock": {"type": "boolean"}, "latencyMs": {"type": "integer", "minimum": 0}, "createdAt": {"type": "string"},
+    "errorCode": {"type": ["string", "null"]}
+  }
+}

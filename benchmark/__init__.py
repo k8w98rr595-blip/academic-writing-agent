@@ -1,0 +1,1 @@
+"""Paperlight detector benchmark package."""

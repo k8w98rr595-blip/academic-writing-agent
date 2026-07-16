@@ -10,13 +10,34 @@ export type EvidenceSpan = {
 };
 
 export type DetectionResult = {
-  estimate: number;
-  uncertainty: { low: number; high: number };
+  overallScore: number | null;
+  estimate: number | null;
+  confidence: number | null;
+  uncertainty: { low: number | null; high: number | null };
   qualifyingWords: number;
   isMock: boolean;
   label: string;
+  fusionStatus: "provider-agreement" | "single-provider" | "disagreement" | "partial" | "unavailable";
+  disagreement: boolean;
+  fusionRule: string;
   spans: EvidenceSpan[];
-  providers: Array<{ name: string; modelVersion: string; estimate: number; isMock: boolean }>;
+  providers: Array<{
+    overallScore: number | null;
+    sentenceSpans: Array<{ paragraphId: string; start: number; end: number; score: number; confidence: number | null }>;
+    confidence: number | null;
+    provider: string;
+    providerModelVersion: string | null;
+    requestId: string | null;
+    warnings: string[];
+    isMock: boolean;
+    latencyMs: number;
+    status: "success" | "failed";
+    error: null | { code: string; message: string; retryable: boolean };
+    name: string;
+    modelVersion: string | null;
+    estimate: number | null;
+  }>;
+  warnings: string[];
   qualityChecks?: {
     duplicateGroups: Array<{ count: number; occurrences: Array<{ paragraphId: string; start: number; end: number; preview: string }> }>;
     inlineCitationCount: number;

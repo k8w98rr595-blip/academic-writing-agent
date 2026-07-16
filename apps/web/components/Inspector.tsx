@@ -25,7 +25,7 @@ type Props = {
 
 function mockDisclaimer(isMock: boolean, disclaimer: string): string {
   return isMock
-    ? "这是写作模式的概率估算，不是对作者身份或学术不端的证明。"
+    ? `演示结果：使用本地固定规则生成，不代表 Pangram 或 Copyleaks 的真实结论。${disclaimer}`
     : disclaimer;
 }
 
@@ -33,18 +33,30 @@ function DetectionPanel({ document, busy, onAnalyze, onTab }: Pick<Props, "docum
   const analysis = document.analysis;
   const result = analysis?.result;
   if (!result) {
-    return <div className="empty-inspector"><ShieldCheck size={26} /><span className="eyebrow">AI EVIDENCE</span><h2>当前版本尚未检测</h2><p>运行带有明确演示标识的检测器，查看句子级证据。结果不能证明文本作者身份。</p><button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "运行演示检测"}</button></div>;
+    return <div className="empty-inspector"><ShieldCheck size={26} /><span className="eyebrow">AI EVIDENCE</span><h2>当前版本尚未检测</h2><p>运行当前已配置的检测模式，查看句子级风险信号。结果不能证明文本作者身份或学术不端。</p><button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "运行 AI 检测"}</button></div>;
   }
   const qualityChecks = result.qualityChecks || { duplicateGroups: [], inlineCitationCount: 0, referenceHeadingPresent: false, referenceEntryParagraphs: 0, warnings: ["重新检测后可生成文稿结构检查。"] };
   const consensusCount = result.spans.filter((span) => span.evidence === "consensus").length;
+  const hasFusedScore = typeof result.estimate === "number";
+  const uncertaintyAvailable = typeof result.uncertainty.low === "number" && typeof result.uncertainty.high === "number";
+  const fusionStatus = result.fusionStatus || (hasFusedScore ? "single-provider" : "unavailable");
+  const warnings = result.warnings || [];
   return (
     <div className="detection-panel">
-      <div className="metric-heading"><div><span>AI 痕迹检测</span><small>{result.isMock ? "演示检测，不代表真实服务" : "已配置检测提供方"}</small></div><strong>{result.isMock ? "演示" : result.label}</strong></div>
-      <div className="score-row"><div><span>估算比例</span><strong>{result.estimate < 20 ? "<20" : result.estimate}<em>%</em></strong></div><div><span>不确定性范围</span><b>{result.uncertainty.low}% 至 {result.uncertainty.high}%</b></div></div>
-      <div className="score-scale" aria-label={`估算 AI 痕迹比例 ${result.estimate}%`}><span style={{ width: `${Math.max(3, result.estimate)}%` }} /></div>
-      <div className="evidence-legend"><span><i className="deep" />高一致性证据</span><span><i />单提供方证据</span></div>
+      <div className="metric-heading"><div><span>AI 写作风险检测</span><small>{result.isMock ? "演示结果，不代表真实服务" : "真实检测提供方结果"}</small></div><strong>{result.isMock ? "演示结果" : result.label}</strong></div>
+      {result.disagreement ? <div className="detection-alert disagreement"><strong>检测结果不一致</strong><span>两家 Provider 落在不同风险区间，因此不生成融合百分比；请分别审阅原始结论。</span></div> : null}
+      {fusionStatus === "partial" || fusionStatus === "unavailable" ? <div className="detection-alert unavailable"><strong>Provider 不可用</strong><span>未形成双重确认，也不会用单家结果替代融合百分比。</span></div> : null}
+      <div className="score-row"><div><span>融合风险比例</span><strong>{hasFusedScore ? <>{result.estimate! < 20 ? "<20" : result.estimate}<em>%</em></> : "—"}</strong></div><div><span>Provider 原始范围</span><b>{uncertaintyAvailable ? `${result.uncertainty.low}% 至 ${result.uncertainty.high}%` : "无可用结果"}</b></div></div>
+      {hasFusedScore ? <div className="score-scale" aria-label={`融合 AI 写作风险比例 ${result.estimate}%`}><span style={{ width: `${Math.max(3, result.estimate!)}%` }} /></div> : <div className="score-scale unavailable" aria-label="无融合百分比" />}
+      <div className="evidence-legend"><span><i className="deep" />两家一致（深蓝）</span><span><i />单家命中（浅蓝）</span></div>
       <div className="qualifying-row"><span>{result.qualifyingWords.toLocaleString()} 个有效单词</span><span>{consensusCount} 处一致命中</span></div>
-      <section className="provider-list"><h3>提供方一致性</h3>{result.providers.map((provider) => <div className="provider-row" key={provider.name}><div><strong>{provider.name}</strong><small>{provider.modelVersion}</small></div><span>{provider.estimate}%</span></div>)}</section>
+      <section className="provider-list"><h3>Provider 原始结论</h3>{result.providers.map((provider) => {
+        const providerName = provider.provider || provider.name;
+        const providerStatus = provider.status || "success";
+        const providerScore = provider.overallScore ?? provider.estimate;
+        return <div className={`provider-row ${providerStatus}`} key={providerName}><div><strong>{providerName}</strong><small>{provider.providerModelVersion || provider.modelVersion || "未返回模型版本"}{typeof provider.latencyMs === "number" ? ` · ${provider.latencyMs} ms` : ""}</small>{provider.error ? <small className="provider-error">{provider.error.message}</small> : null}</div><span>{providerStatus === "success" && providerScore !== null ? `${providerScore}%` : "失败"}</span></div>;
+      })}</section>
+      {warnings.length ? <section className="detection-warnings"><h3>检测说明</h3><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></section> : null}
       <section className="quality-checks"><h3>文稿结构检查</h3><div><span>重复段落组</span><strong>{qualityChecks.duplicateGroups.length}</strong></div><div><span>文内引用</span><strong>{qualityChecks.inlineCitationCount}</strong></div><div><span>参考文献章节</span><strong>{qualityChecks.referenceHeadingPresent ? `${qualityChecks.referenceEntryParagraphs} 个段落` : "未找到"}</strong></div>{qualityChecks.warnings.length ? <ul>{qualityChecks.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : <p>未发现引用结构提醒。</p>}</section>
       {analysis?.isStale ? <div className="stale-notice"><Clock3 size={18} /><div><strong>检测结果已过期</strong><span>文稿在本次检测后发生了修改。</span><button onClick={onAnalyze}>重新检测当前版本</button></div></div> : null}
       <button className="button primary wide" onClick={() => onTab("agent")}>审阅被标记的段落</button>

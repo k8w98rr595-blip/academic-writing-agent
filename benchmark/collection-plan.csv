@@ -1,0 +1,20 @@
+process_label,discipline,native_english,length_band,level,target_private_eval,target_blind_final,collection_method,claim_eligible
+human_independent,humanities_language,yes,medium,undergraduate_lower,20,10,consented donation,yes
+human_independent,social_science,no,medium,undergraduate_upper,20,10,consented donation,yes
+human_independent,business_economics,no,long,undergraduate_upper,20,10,consented donation,yes
+human_independent,computer_engineering,yes,medium,undergraduate_upper,20,10,consented donation,yes
+human_independent,math_natural_science,no,short,undergraduate_lower,20,10,consented donation,yes
+human_independent,law_public_policy,yes,long,undergraduate_upper,20,10,consented donation,yes
+human_independent,medicine_life_science,no,medium,undergraduate_upper,20,10,consented donation,yes
+ai_generated,humanities_language,not_applicable,medium,synthetic_fixture,20,10,commissioned multi-model generation,yes
+ai_generated,social_science,not_applicable,long,synthetic_fixture,20,10,commissioned multi-model generation,yes
+ai_generated,business_economics,not_applicable,short,synthetic_fixture,20,10,commissioned multi-model generation,yes
+ai_generated,computer_engineering,not_applicable,long,synthetic_fixture,20,10,commissioned multi-model generation,yes
+ai_generated,math_natural_science,not_applicable,medium,synthetic_fixture,20,10,commissioned multi-model generation,yes
+ai_generated,law_public_policy,not_applicable,short,synthetic_fixture,20,10,commissioned multi-model generation,yes
+ai_generated,medicine_life_science,not_applicable,long,synthetic_fixture,20,10,commissioned multi-model generation,yes
+ai_draft_human_deep_edit,cross_discipline,mixed,all,undergraduate_mixed,70,35,paired commissioned workflow with revision history,yes
+human_draft_ai_polish,cross_discipline,mixed,all,undergraduate_mixed,70,35,paired consented workflow with prompts and revisions,yes
+human_translated,cross_discipline,no,all,undergraduate_mixed,35,14,licensed human translation with source linkage,yes
+human_independent,cross_discipline,mixed,all,undergraduate_mixed,35,14,template-heavy consented coursework,yes
+human_independent,cross_discipline,mixed,all,undergraduate_mixed,35,14,formula/citation/table/abbreviation/terminology oversample,yes

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://paperlight.local/schemas/benchmark-sample-v1.json",
+  "title": "Paperlight benchmark sample",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sampleId", "datasetVersion", "status", "split", "body", "provenance", "profile", "features", "gold", "governance"],
+  "properties": {
+    "sampleId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{5,63}$"},
+    "datasetVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[a-z0-9.]+)?$"},
+    "status": {"enum": ["active", "planned", "quarantined", "retired"]},
+    "split": {"enum": ["public_dev", "private_eval", "blind_final"]},
+    "body": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256", "encoding", "wordCount", "characterCount"],
+      "properties": {
+        "path": {"type": ["string", "null"]}, "sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "encoding": {"const": "utf-8"}, "wordCount": {"type": "integer", "minimum": 0}, "characterCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "provenance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceType", "sourceReference", "authorization", "processLabel", "labelBasis", "generation", "humanEditing"],
+      "properties": {
+        "sourceType": {"enum": ["public_domain", "open_license", "explicit_donation", "commissioned", "special_generation"]},
+        "sourceReference": {"type": "string", "minLength": 3},
+        "authorization": {"type": "string", "minLength": 3},
+        "processLabel": {"enum": ["human_independent", "ai_generated", "ai_draft_human_deep_edit", "human_draft_ai_polish", "human_translated", "ai_translated"]},
+        "labelBasis": {"type": "string", "minLength": 10},
+        "generation": {
+          "type": "object", "additionalProperties": false,
+          "required": ["models", "promptSummary"],
+          "properties": {"models": {"type": "array", "items": {"type": "string"}}, "promptSummary": {"type": ["string", "null"]}}
+        },
+        "humanEditing": {
+          "type": "object", "additionalProperties": false,
+          "required": ["method", "estimatedChangedFraction"],
+          "properties": {"method": {"type": "string"}, "estimatedChangedFraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1}}
+        }
+      }
+    },
+    "profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["discipline", "level", "writingAbility", "nativeEnglish", "lengthBand", "textType"],
+      "properties": {
+        "discipline": {"enum": ["humanities_language", "social_science", "business_economics", "computer_engineering", "math_natural_science", "law_public_policy", "medicine_life_science"]},
+        "level": {"enum": ["foundation", "undergraduate_lower", "undergraduate_upper", "postgraduate", "historical_reference", "synthetic_fixture"]},
+        "writingAbility": {"enum": ["developing", "typical", "advanced", "unknown"]},
+        "nativeEnglish": {"enum": ["yes", "no", "unknown", "not_applicable"]},
+        "lengthBand": {"enum": ["short", "medium", "long"]},
+        "textType": {"enum": ["course_essay", "lab_report", "case_analysis", "policy_memo", "technical_report", "translated_academic", "historical_reference"]}
+      }
+    },
+    "features": {
+      "type": "object", "additionalProperties": false,
+      "required": ["formulas", "citations", "tables", "abbreviations", "specialistTerms", "templateDriven"],
+      "properties": {
+        "formulas": {"type": "boolean"}, "citations": {"type": "boolean"}, "tables": {"type": "boolean"},
+        "abbreviations": {"type": "boolean"}, "specialistTerms": {"type": "boolean"}, "templateDriven": {"type": "boolean"}
+      }
+    },
+    "gold": {
+      "type": "object", "additionalProperties": false,
+      "required": ["documentClass", "aiFraction", "aiSpans"],
+      "properties": {
+        "documentClass": {"enum": ["human", "ai", "hybrid"]}, "aiFraction": {"type": "number", "minimum": 0, "maximum": 1},
+        "aiSpans": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["start", "end"], "properties": {"start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 1}}}}
+      }
+    },
+    "governance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["visibility", "claimEligible", "providerAccess", "rewriteModelAccess", "piiReviewed"],
+      "properties": {
+        "visibility": {"enum": ["public", "restricted", "sealed"]}, "claimEligible": {"type": "boolean"},
+        "providerAccess": {"enum": ["development_only", "approved_evaluation_window", "never"]},
+        "rewriteModelAccess": {"enum": ["allowed", "never"]}, "piiReviewed": {"const": true}
+      }
+    }
+  }
+}

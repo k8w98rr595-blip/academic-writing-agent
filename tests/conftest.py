@@ -17,6 +17,10 @@ os.environ.update(
         "OWNER_EMAIL": "owner@example.com",
         "REQUIRE_TOTP": "0",
         "DETECTOR_MODE": "mock",
+        "DETECTOR_DATA_PROCESSING_ACKNOWLEDGED": "0",
+        "PANGRAM_API_URL": "https://text.external-api.pangram.com",
+        "COPYLEAKS_API_URL": "https://api.copyleaks.com",
+        "COPYLEAKS_LOGIN_URL": "https://id.copyleaks.com/v3/account/login/api",
         "REWRITE_MODE": "mock",
         "ALLOWED_ORIGINS": "http://testserver",
     }

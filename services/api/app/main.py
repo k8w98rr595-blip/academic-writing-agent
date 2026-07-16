@@ -234,7 +234,7 @@ async def analyze_document(document_id: str, owner: str = Depends(current_owner)
         return {"jobId": job.id, "analysis": document_payload(db, document)["analysis"]}
     db.commit()
     try:
-        result = await run_detection(version.paragraphs)
+        result = await run_detection(version.paragraphs, idempotency_key=run.id)
         run.status = "completed"
         run.result = result
         run.completed_at = utcnow()

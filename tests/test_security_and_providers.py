@@ -69,7 +69,8 @@ def test_document_quality_checks_find_repetition_and_citation_gap():
 def test_real_provider_modes_fail_closed_without_credentials(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("DETECTOR_MODE", "dual")
     monkeypatch.delenv("PANGRAM_API_KEY", raising=False)
-    monkeypatch.delenv("COPYLEAKS_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("COPYLEAKS_EMAIL", raising=False)
+    monkeypatch.delenv("COPYLEAKS_API_KEY", raising=False)
     get_settings.cache_clear()
     with pytest.raises(HTTPException) as detector_error:
         asyncio.run(run_detection([{"id": "p", "text": "Evidence must be checked."}]))
@@ -235,12 +236,12 @@ def test_provider_request_retries_once_on_timeout(monkeypatch: pytest.MonkeyPatc
         async def __aexit__(self, *_: object) -> None:
             return None
 
-        async def post(self, url: str, **_: object) -> httpx.Response:
+        async def request(self, method: str, url: str, **_: object) -> httpx.Response:
             nonlocal attempts
             attempts += 1
             if attempts == 1:
-                raise httpx.ReadTimeout("transient", request=httpx.Request("POST", url))
-            return httpx.Response(200, json={"ok": True}, request=httpx.Request("POST", url))
+                raise httpx.ReadTimeout("transient", request=httpx.Request(method, url))
+            return httpx.Response(200, json={"ok": True}, request=httpx.Request(method, url))
 
     monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
     response = asyncio.run(
@@ -250,27 +251,21 @@ def test_provider_request_retries_once_on_timeout(monkeypatch: pytest.MonkeyPatc
     assert attempts == 2
 
 
-def test_invalid_provider_payload_becomes_controlled_gateway_error(monkeypatch: pytest.MonkeyPatch):
-    class InvalidResponse:
-        def raise_for_status(self) -> None:
-            return None
+def test_invalid_provider_payload_becomes_controlled_unavailable_result(monkeypatch: pytest.MonkeyPatch):
+    async def invalid_post(url: str, **__: object) -> httpx.Response:
+        return httpx.Response(202, json={"not_task_id": "missing"}, request=httpx.Request("POST", url))
 
-        def json(self) -> dict:
-            return {"fraction_ai": "not-a-number", "windows": []}
-
-    async def invalid_post(*_: object, **__: object) -> InvalidResponse:
-        return InvalidResponse()
-
-    monkeypatch.setenv("DETECTOR_MODE", "dual")
+    monkeypatch.setenv("DETECTOR_MODE", "pangram")
     monkeypatch.setenv("PANGRAM_API_KEY", "configured-for-contract-test")
-    monkeypatch.setenv("COPYLEAKS_ACCESS_TOKEN", "configured-for-contract-test")
+    monkeypatch.setenv("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", "1")
     monkeypatch.setattr(detector_module, "post_json_with_retry", invalid_post)
     get_settings.cache_clear()
-    with pytest.raises(HTTPException) as error:
-        asyncio.run(run_detection([{"id": "p", "text": "Evidence must be checked."}]))
-    assert error.value.status_code == 502
-    assert error.value.detail == "Detection provider returned an invalid response"
+    result = asyncio.run(run_detection([{"id": "p", "text": "Evidence must be checked."}]))
+    assert result["overallScore"] is None
+    assert result["fusionStatus"] == "unavailable"
+    assert result["providers"][0]["error"]["code"] == "invalid_response"
     monkeypatch.setenv("DETECTOR_MODE", "mock")
+    monkeypatch.setenv("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", "0")
     get_settings.cache_clear()
 
 
