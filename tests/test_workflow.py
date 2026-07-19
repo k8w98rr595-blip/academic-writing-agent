@@ -30,7 +30,7 @@ def test_owner_only_mock_workflow(client: TestClient, headers: dict[str, str], c
     assert result["isMock"] is True
     assert {row["name"] for row in result["providers"]} == {"Mock Primary", "Mock Review"}
     assert result["disclaimer"].startswith("This is a probabilistic")
-    assert result["qualityChecks"]["duplicateGroups"]
+    assert "qualityChecks" not in result
     job = client.get(f"/api/v1/jobs/{analysis.json()['jobId']}/events", headers=headers)
     assert job.status_code == 200
     assert '"status": "completed"' in job.text

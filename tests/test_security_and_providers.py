@@ -22,7 +22,6 @@ from services.api.app.providers.rewriters import _mock_rewrite, propose_rewrite
 from services.api.app.request_limits import RequestBodyLimitMiddleware
 from services.api.app.security import SlidingWindowLimiter, audit
 from services.api.app.storage import LocalObjectStorage, validate_object_key
-from services.api.app.text import document_quality_checks
 from tests.test_workflow import create_document
 
 
@@ -52,18 +51,6 @@ def test_provider_global_ranges_split_at_paragraph_boundaries():
     paragraphs = [{"id": "p1", "text": "Alpha"}, {"id": "p2", "text": "Bravo"}]
     spans = _global_windows_to_paragraphs(paragraphs, [{"start": 3, "end": 10, "score": 0.8}])
     assert [(span.paragraph_id, span.start, span.end) for span in spans] == [("p1", 3, 5), ("p2", 0, 3)]
-
-
-def test_document_quality_checks_find_repetition_and_citation_gap():
-    sentence = "This repeated sentence contains enough words to support a useful internal comparison."
-    result = document_quality_checks([
-        {"id": "p1", "text": f"{sentence} Evidence was reported [3]."},
-        {"id": "p2", "text": sentence},
-    ])
-    assert result["duplicateGroups"][0]["count"] == 2
-    assert result["inlineCitationCount"] == 1
-    assert result["referenceHeadingPresent"] is False
-    assert "no References" in result["warnings"][0]
 
 
 def test_real_provider_modes_fail_closed_without_credentials(monkeypatch: pytest.MonkeyPatch):

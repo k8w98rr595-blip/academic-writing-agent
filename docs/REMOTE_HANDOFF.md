@@ -1,6 +1,6 @@
 # Production deployment handoff
 
-The owner-only release is deployed from `main`. It uses DeepSeek V4 Pro for rewrite proposals and V4 Flash for semantic-safety validation; detection remains explicitly labeled Mock until the detector benchmark and provider gates are complete.
+The owner-only release is deployed from `main`. It is scoped to AI writing-risk detection and author-controlled revision; plagiarism/similarity checking is intentionally excluded. It uses DeepSeek V4 Pro for rewrite proposals and V4 Flash for semantic-safety validation; detection remains explicitly labeled Mock until the detector benchmark and provider gates are complete.
 
 ## Live services
 

@@ -35,7 +35,6 @@ function DetectionPanel({ document, busy, onAnalyze, onTab }: Pick<Props, "docum
   if (!result) {
     return <div className="empty-inspector"><ShieldCheck size={26} /><span className="eyebrow">AI EVIDENCE</span><h2>当前版本尚未检测</h2><p>运行当前已配置的检测模式，查看句子级风险信号。结果不能证明文本作者身份或学术不端。</p><button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "运行 AI 检测"}</button></div>;
   }
-  const qualityChecks = result.qualityChecks || { duplicateGroups: [], inlineCitationCount: 0, referenceHeadingPresent: false, referenceEntryParagraphs: 0, warnings: ["重新检测后可生成文稿结构检查。"] };
   const consensusCount = result.spans.filter((span) => span.evidence === "consensus").length;
   const hasFusedScore = typeof result.estimate === "number";
   const uncertaintyAvailable = typeof result.uncertainty.low === "number" && typeof result.uncertainty.high === "number";
@@ -57,7 +56,6 @@ function DetectionPanel({ document, busy, onAnalyze, onTab }: Pick<Props, "docum
         return <div className={`provider-row ${providerStatus}`} key={providerName}><div><strong>{providerName}</strong><small>{provider.providerModelVersion || provider.modelVersion || "未返回模型版本"}{typeof provider.latencyMs === "number" ? ` · ${provider.latencyMs} ms` : ""}</small>{provider.error ? <small className="provider-error">{provider.error.message}</small> : null}</div><span>{providerStatus === "success" && providerScore !== null ? `${providerScore}%` : "失败"}</span></div>;
       })}</section>
       {warnings.length ? <section className="detection-warnings"><h3>检测说明</h3><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></section> : null}
-      <section className="quality-checks"><h3>文稿结构检查</h3><div><span>重复段落组</span><strong>{qualityChecks.duplicateGroups.length}</strong></div><div><span>文内引用</span><strong>{qualityChecks.inlineCitationCount}</strong></div><div><span>参考文献章节</span><strong>{qualityChecks.referenceHeadingPresent ? `${qualityChecks.referenceEntryParagraphs} 个段落` : "未找到"}</strong></div>{qualityChecks.warnings.length ? <ul>{qualityChecks.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : <p>未发现引用结构提醒。</p>}</section>
       {analysis?.isStale ? <div className="stale-notice"><Clock3 size={18} /><div><strong>检测结果已过期</strong><span>文稿在本次检测后发生了修改。</span><button onClick={onAnalyze}>重新检测当前版本</button></div></div> : null}
       <button className="button primary wide" onClick={() => onTab("agent")}>审阅被标记的段落</button>
       <p className="inspector-disclaimer">{mockDisclaimer(result.isMock, result.disclaimer)}</p>

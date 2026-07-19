@@ -38,13 +38,6 @@ export type DetectionResult = {
     estimate: number | null;
   }>;
   warnings: string[];
-  qualityChecks?: {
-    duplicateGroups: Array<{ count: number; occurrences: Array<{ paragraphId: string; start: number; end: number; preview: string }> }>;
-    inlineCitationCount: number;
-    referenceHeadingPresent: boolean;
-    referenceEntryParagraphs: number;
-    warnings: string[];
-  };
   disclaimer: string;
 };
 

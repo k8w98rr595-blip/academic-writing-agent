@@ -14,7 +14,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from ..config import get_settings
-from ..text import document_quality_checks, sentence_ranges, word_count
+from ..text import sentence_ranges, word_count
 from .http_client import get_json_with_retry, post_json_with_retry
 
 
@@ -799,7 +799,6 @@ def _merge_results(results: list[ProviderResult], paragraphs: list[dict], reques
         "spans": _merge_provider_spans(results, paragraphs),
         "providers": [_serialize_provider(result) for result in results],
         "warnings": warnings,
-        "qualityChecks": document_quality_checks(paragraphs),
         "disclaimer": "This is a probabilistic writing-pattern risk signal, not proof of authorship or academic misconduct.",
     }
 

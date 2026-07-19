@@ -1,6 +1,6 @@
 # Paperlight — Academic Writing Agent
 
-Paperlight is an owner-only workspace for improving English undergraduate coursework while preserving citations, numbers, quotations, and author control. It provides a patch-based writing Agent, editable AI-like writing estimates, immutable versions, Word import/export, and seven-day deletion.
+Paperlight is an owner-only workspace focused on AI writing-risk detection and author-controlled revision of English undergraduate coursework while preserving citations, numbers, quotations, and author control. It provides a patch-based writing Agent, editable AI-risk evidence, immutable versions, Word import/export, and seven-day deletion. Plagiarism/similarity checking is intentionally outside the product scope.
 
 The default providers are deterministic mocks for product testing. Mock results are always labeled as demonstrations and are not Turnitin results or proof of authorship.
 
