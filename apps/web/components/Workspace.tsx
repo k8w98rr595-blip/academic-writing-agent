@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlignLeft, Bold, ChevronDown, Download, FileClock, FileText, History, Italic, ListTree, LogOut, Plus, Redo2, Save, ShieldCheck, Sparkles, Trash2, Undo2 } from "lucide-react";
 import { api, downloadExport } from "@/lib/api";
-import type { DocumentListItem, PaperDocument, Paragraph, Patch, VersionSummary } from "@/lib/types";
+import type { DocumentListItem, EvidenceSpan, PaperDocument, Paragraph, Patch, VersionSummary } from "@/lib/types";
 import { Inspector, type InspectorTab } from "./Inspector";
 import { PaperEditor } from "./PaperEditor";
 
@@ -28,15 +28,18 @@ export function Workspace(props: Props) {
   const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<InspectorTab>(document.analysis ? "detection" : "agent");
   const [selection, setSelection] = useState({ paragraphId: paragraphs[0]?.id || "", text: "" });
-  const [instruction, setInstruction] = useState("Make this passage more specific and less formulaic without changing the claim.");
+  const [instruction, setInstruction] = useState("Make this passage more specific, strengthen its reasoning, and connect evidence to the claim without changing its meaning.");
   const [rewriteSessionId, setRewriteSessionId] = useState("");
   const [pendingPatch, setPendingPatch] = useState<Patch | null>(() => document.patches.find((patch) => patch.status === "pending") || null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
-  const spans = document.analysis?.result?.spans || [];
   const stale = dirty || Boolean(document.analysis?.isStale);
+  const detectionResult = document.analysis?.result;
+  const spans: EvidenceSpan[] = !stale && detectionResult && "aiGeneratedPercent" in detectionResult
+    ? detectionResult.spans
+    : [];
 
   useEffect(() => {
     setParagraphs(document.currentVersion.paragraphs);
@@ -60,6 +63,12 @@ export function Workspace(props: Props) {
 
   function openInspector(nextTab: InspectorTab) {
     setTab(nextTab);
+    setInspectorCollapsed(false);
+  }
+
+  function reviewRiskSpan(nextSelection: { paragraphId: string; text: string }) {
+    setSelection(nextSelection);
+    setTab("agent");
     setInspectorCollapsed(false);
   }
 
@@ -183,7 +192,7 @@ export function Workspace(props: Props) {
           <button className={inspectorCollapsed ? "active" : ""} onClick={() => setInspectorCollapsed(true)} title="文稿"><FileText size={22} /><span>文稿</span></button>
           <button onClick={() => setInspectorCollapsed(true)} title="结构"><ListTree size={22} /><span>结构</span></button>
           <button className={!inspectorCollapsed && tab === "agent" ? "active" : ""} onClick={() => openInspector("agent")} title="写作助手"><Sparkles size={22} /><span>写作助手</span></button>
-          <button className={!inspectorCollapsed && tab === "detection" ? "active" : ""} onClick={() => openInspector("detection")} title="AI 检测"><ShieldCheck size={22} /><span>AI 检测</span></button>
+          <button className={!inspectorCollapsed && tab === "detection" ? "active" : ""} onClick={() => openInspector("detection")} title="AI 写作风险检测"><ShieldCheck size={22} /><span>AI 风险</span></button>
           <button className={!inspectorCollapsed && tab === "versions" ? "active" : ""} onClick={() => openInspector("versions")} title="版本"><History size={22} /><span>版本</span></button>
         </nav>
         <button className="studio-logout" title="退出登录" onClick={onLogout}><LogOut size={20} /><span>退出</span></button>
@@ -204,7 +213,7 @@ export function Workspace(props: Props) {
 
           <section className="editor-region">
             {message ? <div className="workspace-message" role="status">{message}</div> : null}
-            <div className="paper-scroller"><PaperEditor paragraphs={paragraphs} spans={spans} stale={stale} onDirty={() => setDirty(true)} onParagraphBlur={updateParagraph} onSelection={setSelection} /></div>
+            <div className="paper-scroller"><PaperEditor paragraphs={paragraphs} spans={spans} stale={stale} onDirty={() => setDirty(true)} onParagraphBlur={updateParagraph} onSelection={setSelection} onRiskSpan={reviewRiskSpan} /></div>
             <div className="editor-toolbar" aria-label="编辑器工具"><button title="撤销" onClick={() => window.document.execCommand("undo")}><Undo2 size={17} /></button><button title="重做" onClick={() => window.document.execCommand("redo")}><Redo2 size={17} /></button><span className="toolbar-separator" /><span className="toolbar-style">正文</span><span className="toolbar-font">Source Serif 4</span><span className="toolbar-separator" /><button title="加粗" onClick={() => window.document.execCommand("bold")}><Bold size={17} /></button><button title="斜体" onClick={() => window.document.execCommand("italic")}><Italic size={17} /></button><button title="左对齐"><AlignLeft size={17} /></button>{dirty ? <><span className="toolbar-separator" /><button className="save-action" disabled={busy} onClick={() => void saveDraft()}><Save size={16} />保存版本</button></> : null}</div>
             <footer className="editor-status"><span>英文课程论文</span><span>{stale ? "检测结果需要刷新" : "检测结果与当前版本一致"}</span></footer>
           </section>

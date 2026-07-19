@@ -8,7 +8,7 @@ from services.api.app.config import get_settings
 from services.api.app.database import session_scope
 from services.api.app.models import AnalysisRun, JobRecord, utcnow
 from services.api.app.providers import run_detection
-from services.api.app.service import get_version
+from services.api.app.service import add_risk_comparison, get_version
 from services.api.app.service import cleanup_expired_documents
 from services.api.app.models import Document
 
@@ -38,7 +38,14 @@ def run_analysis_job(job_id: str, analysis_id: str) -> str:
         version = get_version(db, document, analysis.version_id)
         job.status = "running"
         analysis.status = "running"
-        result = asyncio.run(run_detection(version.paragraphs, idempotency_key=analysis.id))
+        result = asyncio.run(
+            run_detection(
+                version.paragraphs,
+                idempotency_key=analysis.id,
+                analyzed_version_id=version.id,
+            )
+        )
+        add_risk_comparison(db, analysis, result)
         analysis.result = result
         analysis.status = "completed"
         analysis.completed_at = utcnow()

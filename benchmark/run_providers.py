@@ -27,30 +27,27 @@ def paragraphs_for(sample_id: str, text: str) -> tuple[list[dict[str, str]], dic
 def prediction_rows(
     result: dict[str, Any], *, dataset_version: str, run_id: str, sample_id: str, offsets: dict[str, int], created_at: str
 ) -> list[dict[str, Any]]:
-    rows = []
-    for provider in result.get("providers", []):
-        spans = []
-        for span in provider.get("sentenceSpans", []):
-            paragraph_id = span.get("paragraphId")
-            if paragraph_id not in offsets:
-                raise BenchmarkError("provider result referenced an unknown paragraph ID")
-            spans.append({
-                "start": offsets[paragraph_id] + int(span["start"]),
-                "end": offsets[paragraph_id] + int(span["end"]),
-                "score": float(span["score"]),
-            })
-        score = provider.get("overallScore")
-        rows.append({
-            "datasetVersion": dataset_version, "runId": run_id, "sampleId": sample_id,
-            "provider": provider.get("provider") or provider.get("name"),
-            "providerVersion": provider.get("providerModelVersion") or provider.get("modelVersion") or "unknown",
-            "status": provider.get("status", "success"),
-            "score": None if score is None else round(float(score) / 100, 6),
-            "spans": spans, "isMock": bool(provider.get("isMock")),
-            "latencyMs": int(provider.get("latencyMs") or 0), "createdAt": created_at,
-            "errorCode": (provider.get("error") or {}).get("code"),
+    spans = []
+    for span in result.get("spans", []):
+        paragraph_id = span.get("paragraphId")
+        if paragraph_id not in offsets:
+            raise BenchmarkError("provider result referenced an unknown paragraph ID")
+        spans.append({
+            "start": offsets[paragraph_id] + int(span["start"]),
+            "end": offsets[paragraph_id] + int(span["end"]),
+            "score": float(span["score"]),
         })
-    return rows
+    score = result.get("combinedRiskPercent")
+    return [{
+        "datasetVersion": dataset_version, "runId": run_id, "sampleId": sample_id,
+        "provider": result.get("provider"),
+        "providerVersion": result.get("providerModelVersion") or "unknown",
+        "status": result.get("status", "success"),
+        "score": None if score is None else round(float(score) / 100, 6),
+        "spans": spans, "isMock": bool(result.get("isMock")),
+        "latencyMs": int(result.get("latencyMs") or 0), "createdAt": created_at,
+        "errorCode": (result.get("error") or {}).get("code"),
+    }]
 
 
 async def collect(args: argparse.Namespace) -> int:
@@ -98,7 +95,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--manifest", type=Path, required=True)
     result.add_argument("--output", type=Path, required=True)
     result.add_argument("--run-id", required=True)
-    result.add_argument("--mode", choices=("mock", "pangram", "copyleaks", "dual"), default="dual")
+    result.add_argument("--mode", choices=("mock", "pangram"), default="mock")
     result.add_argument("--confirm-provider-upload", action="store_true")
     result.add_argument("--allow-blind-final", action="store_true")
     result.add_argument("--blind-release-id")

@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import math
-import threading
+import re
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Protocol
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Literal, Protocol
 from urllib.parse import quote
 
 import httpx
@@ -31,8 +31,19 @@ FORMULAIC = (
     "in today's rapidly evolving",
 )
 
+Classification = Literal["ai_generated", "ai_assisted", "human"]
 CONFIDENCE_VALUES = {"high": 0.9, "medium": 0.7, "low": 0.5}
-MAX_PROVIDER_SPANS = 20_000
+PREDICTION_VALUES = {"ai", "ai-assisted", "human", "mixed"}
+MAX_PROVIDER_WINDOWS = 20_000
+FRACTION_SUM_TOLERANCE = 0.02
+SAFE_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+SAFE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+SAFE_LABEL = re.compile(r"^[A-Za-z][A-Za-z -]{0,63}$")
+SAFE_STAGE = re.compile(r"^STAGE_[A-Z_]{1,40}$")
+DISCLAIMER = (
+    "This is a probabilistic AI writing risk signal for internal review, not proof of authorship "
+    "or academic misconduct."
+)
 
 
 @dataclass(frozen=True)
@@ -40,17 +51,21 @@ class ProviderSpan:
     paragraph_id: str
     start: int
     end: int
+    classification: Classification
     score: float
-    confidence: float | None = None
+    confidence: float
 
 
 @dataclass
 class ProviderResult:
     provider: str
     provider_model_version: str | None
-    overall_score: float | None
-    sentence_spans: list[ProviderSpan]
-    confidence: float | None
+    prediction: str | None
+    fraction_ai: float | None
+    fraction_ai_assisted: float | None
+    fraction_human: float | None
+    qualifying_words: int
+    spans: list[ProviderSpan]
     request_id: str | None
     warnings: list[str]
     is_mock: bool
@@ -89,37 +104,50 @@ class DetectorProviderError(RuntimeError):
         self.request_id = request_id
 
 
-class MockDetectorProvider:
-    def __init__(self, name: str, salt: str, threshold: int) -> None:
-        self.name = name
-        self.salt = salt
-        self.threshold = threshold
+class MockPangramDetectorProvider:
+    name = "Mock Pangram"
 
     def validate_configuration(self) -> None:
         return None
 
     async def detect(self, paragraphs: list[dict], idempotency_key: str) -> ProviderResult:
         spans: list[ProviderSpan] = []
-        flagged_words = 0
-        total_words = sum(word_count(item["text"]) for item in paragraphs) or 1
+        word_totals: dict[Classification, int] = {"ai_generated": 0, "ai_assisted": 0, "human": 0}
         for paragraph in paragraphs:
             for start, end, sentence in sentence_ranges(paragraph["text"]):
                 normalized = sentence.lower()
-                digest = hashlib.sha256(f"{self.salt}:{sentence}".encode("utf-8")).digest()
-                bucket = int.from_bytes(digest[:2], "big") % 100
-                formulaic = any(pattern in normalized for pattern in FORMULAIC)
-                if formulaic or bucket < self.threshold:
-                    score = min(0.97, 0.86 if formulaic else 0.66 + (self.threshold - bucket) / 100)
-                    spans.append(ProviderSpan(paragraph["id"], start, end, score, 0.72))
-                    flagged_words += word_count(sentence)
-        fraction = round(flagged_words / total_words * 100, 1)
-        request_id = "mock-" + hashlib.sha256(f"{self.salt}:{idempotency_key}".encode()).hexdigest()[:16]
+                bucket = int.from_bytes(hashlib.sha256(sentence.encode("utf-8")).digest()[:2], "big") % 100
+                if any(pattern in normalized for pattern in FORMULAIC):
+                    classification: Classification = "ai_generated"
+                    score, confidence = 0.91, 0.9
+                elif bucket < 28:
+                    classification = "ai_assisted"
+                    score, confidence = 0.58, 0.7
+                else:
+                    classification = "human"
+                    score, confidence = 0.08, 0.7
+                words = word_count(sentence)
+                word_totals[classification] += words
+                if classification != "human":
+                    spans.append(
+                        ProviderSpan(paragraph["id"], start, end, classification, score, confidence)
+                    )
+
+        total_words = sum(word_totals.values()) or 1
+        fraction_ai = word_totals["ai_generated"] / total_words
+        fraction_assisted = word_totals["ai_assisted"] / total_words
+        fraction_human = 1.0 - fraction_ai - fraction_assisted
+        prediction = _prediction_from_fractions(fraction_ai, fraction_assisted, fraction_human)
+        request_id = "mock-" + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:16]
         return ProviderResult(
             provider=self.name,
-            provider_model_version="mock-detector-v2",
-            overall_score=fraction,
-            sentence_spans=spans,
-            confidence=0.72,
+            provider_model_version="mock-pangram-v3",
+            prediction=prediction,
+            fraction_ai=fraction_ai,
+            fraction_ai_assisted=fraction_assisted,
+            fraction_human=fraction_human,
+            qualifying_words=total_words,
+            spans=spans,
             request_id=request_id,
             warnings=["Demonstration result generated by deterministic local rules."],
             is_mock=True,
@@ -145,8 +173,8 @@ class PangramDetectorProvider:
         base_url = settings.pangram_api_url.rstrip("/")
         headers = {"x-api-key": settings.pangram_api_key, "Content-Type": "application/json"}
 
-        # Pangram does not document an idempotency header. Submit once to avoid
-        # duplicate paid tasks after an ambiguous network failure; polling is retried.
+        # Pangram documents no idempotency key for task creation. Never retry this
+        # potentially billable POST after a timeout or an indeterminate response.
         try:
             response = await post_json_with_retry(
                 f"{base_url}/task",
@@ -156,17 +184,25 @@ class PangramDetectorProvider:
                 attempts=1,
             )
         except httpx.TimeoutException as error:
-            raise DetectorProviderError("timeout", "Pangram submission timed out", retryable=True) from error
+            raise DetectorProviderError(
+                "submission_outcome_unknown",
+                "Pangram submission timed out; it was not repeated automatically",
+                retryable=False,
+            ) from error
         except httpx.HTTPError as error:
-            raise DetectorProviderError("service_unavailable", "Pangram is unavailable", retryable=True) from error
+            raise DetectorProviderError(
+                "submission_outcome_unknown",
+                "Pangram submission could not be confirmed; it was not repeated automatically",
+                retryable=False,
+            ) from error
         _raise_for_provider_status("Pangram", response)
         submitted = _json_object("Pangram", response)
         task_id = submitted.get("task_id")
-        if not isinstance(task_id, str) or not task_id.strip() or len(task_id) > 200:
+        if not isinstance(task_id, str) or not SAFE_TASK_ID.fullmatch(task_id):
             raise DetectorProviderError("invalid_response", "Pangram returned an invalid task ID", retryable=False)
 
         deadline = time.monotonic() + settings.pangram_max_poll_seconds
-        payload: dict[str, Any] | None = None
+        completed: dict[str, Any] | None = None
         while time.monotonic() < deadline:
             try:
                 poll = await get_json_with_retry(
@@ -177,21 +213,27 @@ class PangramDetectorProvider:
                 )
             except httpx.TimeoutException as error:
                 raise DetectorProviderError(
-                    "timeout", "Pangram result polling timed out", retryable=True, request_id=task_id
+                    "polling_timeout",
+                    "Pangram result polling timed out; no new task was submitted",
+                    retryable=False,
+                    request_id=task_id,
                 ) from error
             except httpx.HTTPError as error:
                 raise DetectorProviderError(
-                    "service_unavailable", "Pangram is unavailable", retryable=True, request_id=task_id
+                    "service_unavailable",
+                    "Pangram result polling is unavailable; no new task was submitted",
+                    retryable=False,
+                    request_id=task_id,
                 ) from error
             _raise_for_provider_status("Pangram", poll, request_id=task_id)
             current = _json_object("Pangram", poll)
             stage = current.get("stage")
-            if not isinstance(stage, str):
+            if not isinstance(stage, str) or not SAFE_STAGE.fullmatch(stage):
                 raise DetectorProviderError(
                     "invalid_response", "Pangram returned an invalid task stage", retryable=False, request_id=task_id
                 )
             if stage == "STAGE_SUCCESS":
-                payload = current
+                completed = current
                 break
             if stage == "STAGE_FAILED":
                 raise DetectorProviderError(
@@ -201,258 +243,52 @@ class PangramDetectorProvider:
                     request_id=task_id,
                 )
             await asyncio.sleep(settings.pangram_poll_interval_seconds)
-        if payload is None:
+        if completed is None:
             raise DetectorProviderError(
-                "timeout", "Pangram did not finish within the configured polling window", retryable=True, request_id=task_id
+                "polling_timeout",
+                "Pangram did not finish within the polling window; no new task was submitted",
+                retryable=False,
+                request_id=task_id,
             )
 
-        fraction_ai = _fraction(payload.get("fraction_ai"), "Pangram fraction_ai")
-        fraction_assisted = _fraction(payload.get("fraction_ai_assisted", 0), "Pangram fraction_ai_assisted")
-        overall = min(1.0, fraction_ai + fraction_assisted)
-        windows_payload = payload.get("windows")
-        if not isinstance(payload.get("text"), str) or payload["text"] != text:
+        fraction_ai = _fraction(completed.get("fraction_ai"), "Pangram fraction_ai", task_id)
+        fraction_assisted = _fraction(
+            completed.get("fraction_ai_assisted"), "Pangram fraction_ai_assisted", task_id
+        )
+        fraction_human = _fraction(completed.get("fraction_human"), "Pangram fraction_human", task_id)
+        if abs((fraction_ai + fraction_assisted + fraction_human) - 1.0) > FRACTION_SUM_TOLERANCE:
+            raise DetectorProviderError(
+                "invalid_response", "Pangram authorship fractions do not sum to one", retryable=False,
+                request_id=task_id,
+            )
+        returned_text = completed.get("text")
+        if not isinstance(returned_text, str) or returned_text != text:
             raise DetectorProviderError(
                 "range_mismatch", "Pangram returned text that differs from the submission", retryable=False,
-                request_id=task_id
+                request_id=task_id,
             )
-        if not isinstance(windows_payload, list) or len(windows_payload) > MAX_PROVIDER_SPANS:
-            raise DetectorProviderError(
-                "invalid_response", "Pangram windows must be an array", retryable=False, request_id=task_id
-            )
-        windows: list[dict[str, Any]] = []
-        window_confidences: list[float] = []
-        for row in windows_payload:
-            if not isinstance(row, dict):
-                raise DetectorProviderError(
-                    "invalid_response", "Pangram window must be an object", retryable=False, request_id=task_id
-                )
-            start = _integer(row.get("start_index"), "Pangram start_index")
-            end = _integer(row.get("end_index"), "Pangram end_index")
-            _validate_provider_range(text, start, end, "Pangram", task_id)
-            provider_text = row.get("text")
-            if not isinstance(provider_text, str) or text[start:end] != provider_text:
-                raise DetectorProviderError(
-                    "range_mismatch",
-                    "Pangram character ranges did not match the submitted text",
-                    retryable=False,
-                    request_id=task_id,
-                )
-            label = str(row.get("label", ""))
-            score = _fraction(row.get("ai_assistance_score"), "Pangram ai_assistance_score")
-            confidence = CONFIDENCE_VALUES.get(str(row.get("confidence", "")).lower())
-            if not label.lower().startswith("human") and score > 0:
-                windows.append({"start": start, "end": end, "score": score, "confidence": confidence})
-                if confidence is not None:
-                    window_confidences.append(confidence)
-        spans = _global_windows_to_sentences(paragraphs, windows)
-        warnings = ["Pangram overall score includes AI-generated and AI-assisted fractions."]
-        if overall > 0 and not spans:
-            warnings.append("Pangram reported document-level risk without mappable segment evidence.")
+        version = _validated_string(completed.get("version"), "Pangram version", SAFE_VERSION, task_id)
+        prediction = _validated_prediction(completed.get("prediction_short"), task_id)
+        windows = _validated_windows(text, completed.get("windows"), task_id)
+        spans = _map_windows_to_paragraphs(paragraphs, windows, task_id)
+        combined = fraction_ai + fraction_assisted
+        warnings = [
+            "Combined risk is the transparent sum of Pangram AI-generated and AI-assisted fractions."
+        ]
+        if combined > 0 and not spans:
+            warnings.append("Pangram reported document-level risk without a marked non-human segment.")
         return ProviderResult(
             provider=self.name,
-            provider_model_version=str(payload.get("version") or "unknown"),
-            overall_score=round(overall * 100, 1),
-            sentence_spans=spans,
-            confidence=min(window_confidences) if window_confidences else None,
+            provider_model_version=version,
+            prediction=prediction,
+            fraction_ai=fraction_ai,
+            fraction_ai_assisted=fraction_assisted,
+            fraction_human=fraction_human,
+            qualifying_words=word_count(text),
+            spans=spans,
             request_id=task_id,
             warnings=warnings,
             is_mock=False,
-            latency_ms=round((time.perf_counter() - started) * 1000),
-        )
-
-
-@dataclass
-class _TokenCache:
-    fingerprint: str = ""
-    token: str = ""
-    expires_at: datetime = field(default_factory=lambda: datetime.fromtimestamp(0, timezone.utc))
-
-
-_COPYLEAKS_TOKEN_CACHE = _TokenCache()
-_COPYLEAKS_CACHE_LOCK = threading.Lock()
-
-
-def clear_copyleaks_token_cache() -> None:
-    with _COPYLEAKS_CACHE_LOCK:
-        _COPYLEAKS_TOKEN_CACHE.fingerprint = ""
-        _COPYLEAKS_TOKEN_CACHE.token = ""
-        _COPYLEAKS_TOKEN_CACHE.expires_at = datetime.fromtimestamp(0, timezone.utc)
-
-
-class CopyleaksDetectorProvider:
-    name = "Copyleaks"
-
-    def validate_configuration(self) -> None:
-        settings = get_settings()
-        if not settings.copyleaks_email or not settings.copyleaks_api_key:
-            raise DetectorConfigurationError("Copyleaks is not configured")
-        if not settings.detector_data_processing_acknowledged:
-            raise DetectorConfigurationError("Real detector data processing terms have not been acknowledged")
-
-    async def _access_token(self, *, force_refresh: bool = False) -> str:
-        settings = get_settings()
-        fingerprint = hashlib.sha256(
-            f"{settings.copyleaks_email}\0{settings.copyleaks_api_key}".encode("utf-8")
-        ).hexdigest()
-        now = datetime.now(timezone.utc)
-        with _COPYLEAKS_CACHE_LOCK:
-            if (
-                not force_refresh
-                and _COPYLEAKS_TOKEN_CACHE.fingerprint == fingerprint
-                and _COPYLEAKS_TOKEN_CACHE.token
-                and _COPYLEAKS_TOKEN_CACHE.expires_at > now + timedelta(minutes=5)
-            ):
-                return _COPYLEAKS_TOKEN_CACHE.token
-        try:
-            response = await post_json_with_retry(
-                settings.copyleaks_login_url,
-                headers={"Content-Type": "application/json", "Accept": "application/json"},
-                payload={"email": settings.copyleaks_email, "key": settings.copyleaks_api_key},
-                timeout_seconds=settings.provider_timeout_seconds,
-                attempts=2,
-            )
-        except httpx.TimeoutException as error:
-            raise DetectorProviderError("timeout", "Copyleaks login timed out", retryable=True) from error
-        except httpx.HTTPError as error:
-            raise DetectorProviderError("service_unavailable", "Copyleaks login is unavailable", retryable=True) from error
-        _raise_for_provider_status("Copyleaks", response)
-        payload = _json_object("Copyleaks", response)
-        token = payload.get("access_token")
-        if not isinstance(token, str) or not token:
-            raise DetectorProviderError("invalid_response", "Copyleaks login returned no access token", retryable=False)
-        expires_at = _parse_copyleaks_expiry(payload.get(".expires"))
-        with _COPYLEAKS_CACHE_LOCK:
-            _COPYLEAKS_TOKEN_CACHE.fingerprint = fingerprint
-            _COPYLEAKS_TOKEN_CACHE.token = token
-            _COPYLEAKS_TOKEN_CACHE.expires_at = expires_at
-        return token
-
-    async def detect(self, paragraphs: list[dict], idempotency_key: str) -> ProviderResult:
-        self.validate_configuration()
-        settings = get_settings()
-        started = time.perf_counter()
-        text = _document_text(paragraphs)
-        if not 255 <= len(text) <= 100_000:
-            raise DetectorProviderError(
-                "invalid_request", "Copyleaks text must contain 255 to 100000 characters", retryable=False
-            )
-        scan_id = "pl-" + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:30]
-        endpoint = f"{settings.copyleaks_api_url.rstrip('/')}/v2/writer-detector/{scan_id}/check"
-        response: httpx.Response | None = None
-        for auth_attempt in range(2):
-            token = await self._access_token(force_refresh=auth_attempt == 1)
-            try:
-                response = await post_json_with_retry(
-                    endpoint,
-                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                    payload={
-                        "text": text,
-                        "sandbox": settings.copyleaks_sandbox,
-                        "explain": True,
-                        "sensitivity": settings.copyleaks_sensitivity,
-                    },
-                    timeout_seconds=settings.provider_timeout_seconds,
-                    attempts=2,
-                )
-            except httpx.TimeoutException as error:
-                raise DetectorProviderError(
-                    "timeout", "Copyleaks detection timed out", retryable=True, request_id=scan_id
-                ) from error
-            except httpx.HTTPError as error:
-                raise DetectorProviderError(
-                    "service_unavailable", "Copyleaks is unavailable", retryable=True, request_id=scan_id
-                ) from error
-            if response.status_code != 401 or auth_attempt == 1:
-                break
-            clear_copyleaks_token_cache()
-        assert response is not None
-        _raise_for_provider_status("Copyleaks", response, request_id=scan_id)
-        payload = _json_object("Copyleaks", response)
-        summary = payload.get("summary")
-        if not isinstance(summary, dict):
-            raise DetectorProviderError(
-                "invalid_response", "Copyleaks summary must be an object", retryable=False, request_id=scan_id
-            )
-        ai_score = _fraction(summary.get("ai"), "Copyleaks summary.ai")
-        human_score = _fraction(summary.get("human"), "Copyleaks summary.human")
-        rows = payload.get("results")
-        if not isinstance(rows, list) or len(rows) > MAX_PROVIDER_SPANS:
-            raise DetectorProviderError(
-                "invalid_response", "Copyleaks results must be an array", retryable=False, request_id=scan_id
-            )
-        windows: list[dict[str, Any]] = []
-        warnings = ["Copyleaks section probability is deprecated; classification and summary drive the mapping."]
-        for row in rows:
-            if not isinstance(row, dict):
-                raise DetectorProviderError(
-                    "invalid_response", "Copyleaks result must be an object", retryable=False, request_id=scan_id
-                )
-            classification = _integer(row.get("classification"), "Copyleaks classification")
-            if classification not in {1, 2}:
-                raise DetectorProviderError(
-                    "invalid_response", "Copyleaks returned an unknown classification", retryable=False, request_id=scan_id
-                )
-            if classification != 2:
-                continue
-            probability_raw = row.get("probability")
-            probability = ai_score if probability_raw is None else _fraction(probability_raw, "Copyleaks probability")
-            matches = row.get("matches")
-            if not isinstance(matches, list) or len(matches) > MAX_PROVIDER_SPANS:
-                raise DetectorProviderError(
-                    "invalid_response", "Copyleaks matches must be an array", retryable=False, request_id=scan_id
-                )
-            for match in matches:
-                if not isinstance(match, dict):
-                    raise DetectorProviderError(
-                        "invalid_response", "Copyleaks match must be an object", retryable=False, request_id=scan_id
-                    )
-                text_positions = match.get("text")
-                chars = text_positions.get("chars") if isinstance(text_positions, dict) else None
-                if not isinstance(chars, dict):
-                    raise DetectorProviderError(
-                        "invalid_response", "Copyleaks character positions are missing", retryable=False, request_id=scan_id
-                    )
-                starts = chars.get("starts")
-                lengths = chars.get("lengths")
-                if (
-                    not isinstance(starts, list)
-                    or not isinstance(lengths, list)
-                    or len(starts) != len(lengths)
-                    or len(starts) > MAX_PROVIDER_SPANS
-                ):
-                    raise DetectorProviderError(
-                        "invalid_response", "Copyleaks character arrays are invalid", retryable=False, request_id=scan_id
-                    )
-                for raw_start, raw_length in zip(starts, lengths, strict=True):
-                    start = _integer(raw_start, "Copyleaks character start")
-                    length = _integer(raw_length, "Copyleaks character length")
-                    end = start + length
-                    _validate_provider_range(text, start, end, "Copyleaks", scan_id)
-                    windows.append(
-                        {"start": start, "end": end, "score": probability, "confidence": max(ai_score, human_score)}
-                    )
-                    if len(windows) > MAX_PROVIDER_SPANS:
-                        raise DetectorProviderError(
-                            "invalid_response", "Copyleaks returned too many character ranges", retryable=False,
-                            request_id=scan_id
-                        )
-        scanned_document = payload.get("scannedDocument")
-        if isinstance(scanned_document, dict) and scanned_document.get("scanId") not in {None, scan_id}:
-            raise DetectorProviderError(
-                "invalid_response", "Copyleaks returned a mismatched scan ID", retryable=False, request_id=scan_id
-            )
-        spans = _global_windows_to_sentences(paragraphs, windows)
-        if ai_score > 0 and not spans:
-            warnings.append("Copyleaks reported document-level risk without mappable section evidence.")
-        return ProviderResult(
-            provider=self.name,
-            provider_model_version=str(payload.get("modelVersion") or "unknown"),
-            overall_score=round(ai_score * 100, 1),
-            sentence_spans=spans,
-            confidence=max(ai_score, human_score),
-            request_id=scan_id,
-            warnings=warnings,
-            is_mock=settings.copyleaks_sandbox,
             latency_ms=round((time.perf_counter() - started) * 1000),
         )
 
@@ -461,28 +297,175 @@ def _document_text(paragraphs: list[dict]) -> str:
     return "\n\n".join(str(item["text"]) for item in paragraphs)
 
 
-def _fraction(value: Any, label: str) -> float:
+def _prediction_from_fractions(ai: float, assisted: float, human: float) -> str:
+    if human >= 0.8:
+        return "Human"
+    if ai >= 0.6:
+        return "AI"
+    if assisted >= 0.4:
+        return "AI-Assisted"
+    return "Mixed"
+
+
+def _fraction(value: Any, label: str, request_id: str | None = None) -> float:
     if isinstance(value, bool):
-        raise DetectorProviderError("invalid_response", f"{label} must be numeric", retryable=False)
+        raise DetectorProviderError(
+            "invalid_response", f"{label} must be numeric", retryable=False, request_id=request_id
+        )
     try:
         number = float(value)
     except (TypeError, ValueError) as error:
-        raise DetectorProviderError("invalid_response", f"{label} must be numeric", retryable=False) from error
+        raise DetectorProviderError(
+            "invalid_response", f"{label} must be numeric", retryable=False, request_id=request_id
+        ) from error
     if not math.isfinite(number) or not 0 <= number <= 1:
-        raise DetectorProviderError("invalid_response", f"{label} is outside 0 to 1", retryable=False)
+        raise DetectorProviderError(
+            "invalid_response", f"{label} is outside 0 to 1", retryable=False, request_id=request_id
+        )
     return number
 
 
-def _integer(value: Any, label: str) -> int:
+def _integer(value: Any, label: str, request_id: str | None = None) -> int:
     if isinstance(value, bool):
-        raise DetectorProviderError("invalid_response", f"{label} must be an integer", retryable=False)
+        raise DetectorProviderError(
+            "invalid_response", f"{label} must be an integer", retryable=False, request_id=request_id
+        )
     try:
         number = int(value)
     except (TypeError, ValueError) as error:
-        raise DetectorProviderError("invalid_response", f"{label} must be an integer", retryable=False) from error
+        raise DetectorProviderError(
+            "invalid_response", f"{label} must be an integer", retryable=False, request_id=request_id
+        ) from error
     if isinstance(value, float) and not value.is_integer():
-        raise DetectorProviderError("invalid_response", f"{label} must be an integer", retryable=False)
+        raise DetectorProviderError(
+            "invalid_response", f"{label} must be an integer", retryable=False, request_id=request_id
+        )
     return number
+
+
+def _validated_string(
+    value: Any, label: str, pattern: re.Pattern[str], request_id: str | None = None
+) -> str:
+    if not isinstance(value, str) or not pattern.fullmatch(value):
+        raise DetectorProviderError(
+            "invalid_response", f"{label} has an invalid format", retryable=False, request_id=request_id
+        )
+    return value
+
+
+def _validated_prediction(value: Any, request_id: str) -> str:
+    if not isinstance(value, str) or len(value) > 32 or value.lower() not in PREDICTION_VALUES:
+        raise DetectorProviderError(
+            "invalid_response", "Pangram prediction_short is invalid", retryable=False, request_id=request_id
+        )
+    return value
+
+
+def _classification_from_label(value: Any, request_id: str) -> Classification:
+    label = _validated_string(value, "Pangram window label", SAFE_LABEL, request_id)
+    normalized = label.lower().replace(" ", "-")
+    if "human" in normalized and "ai" not in normalized:
+        return "human"
+    if "ai-assisted" in normalized:
+        return "ai_assisted"
+    if "ai-generated" in normalized or normalized == "ai":
+        return "ai_generated"
+    raise DetectorProviderError(
+        "invalid_response", "Pangram window label is unsupported", retryable=False, request_id=request_id
+    )
+
+
+def _validated_windows(text: str, value: Any, request_id: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) > MAX_PROVIDER_WINDOWS:
+        raise DetectorProviderError(
+            "invalid_response", "Pangram windows must be a bounded array", retryable=False, request_id=request_id
+        )
+    windows: list[dict[str, Any]] = []
+    for row in value:
+        if not isinstance(row, dict):
+            raise DetectorProviderError(
+                "invalid_response", "Pangram window must be an object", retryable=False, request_id=request_id
+            )
+        start = _integer(row.get("start_index"), "Pangram start_index", request_id)
+        end = _integer(row.get("end_index"), "Pangram end_index", request_id)
+        _validate_provider_range(text, start, end, "Pangram", request_id)
+        provider_text = row.get("text")
+        if not isinstance(provider_text, str) or text[start:end] != provider_text:
+            raise DetectorProviderError(
+                "range_mismatch", "Pangram window text does not match its character range", retryable=False,
+                request_id=request_id,
+            )
+        classification = _classification_from_label(row.get("label"), request_id)
+        score = _fraction(row.get("ai_assistance_score"), "Pangram ai_assistance_score", request_id)
+        confidence_label = row.get("confidence")
+        if not isinstance(confidence_label, str) or confidence_label.lower() not in CONFIDENCE_VALUES:
+            raise DetectorProviderError(
+                "invalid_response", "Pangram window confidence is invalid", retryable=False, request_id=request_id
+            )
+        windows.append(
+            {
+                "start": start,
+                "end": end,
+                "classification": classification,
+                "score": score,
+                "confidence": CONFIDENCE_VALUES[confidence_label.lower()],
+            }
+        )
+    windows.sort(key=lambda item: (item["start"], item["end"]))
+    if any(current["start"] < previous["end"] for previous, current in zip(windows, windows[1:])):
+        raise DetectorProviderError(
+            "range_mismatch", "Pangram returned overlapping windows", retryable=False, request_id=request_id
+        )
+    return windows
+
+
+def _validate_provider_range(
+    text: str, start: int, end: int, provider: str, request_id: str | None = None
+) -> None:
+    if start < 0 or end <= start or end > len(text):
+        raise DetectorProviderError(
+            "range_mismatch", f"{provider} returned an out-of-range character span", retryable=False,
+            request_id=request_id,
+        )
+
+
+def _map_windows_to_paragraphs(
+    paragraphs: list[dict], windows: list[dict[str, Any]], request_id: str
+) -> list[ProviderSpan]:
+    offsets: list[tuple[dict, int, int]] = []
+    cursor = 0
+    for paragraph in paragraphs:
+        start = cursor
+        end = start + len(paragraph["text"])
+        offsets.append((paragraph, start, end))
+        cursor = end + 2
+    spans: list[ProviderSpan] = []
+    for window in windows:
+        if window["classification"] == "human":
+            continue
+        mapped = 0
+        for paragraph, paragraph_start, paragraph_end in offsets:
+            overlap_start = max(window["start"], paragraph_start)
+            overlap_end = min(window["end"], paragraph_end)
+            if overlap_end <= overlap_start:
+                continue
+            spans.append(
+                ProviderSpan(
+                    paragraph_id=paragraph["id"],
+                    start=overlap_start - paragraph_start,
+                    end=overlap_end - paragraph_start,
+                    classification=window["classification"],
+                    score=window["score"],
+                    confidence=window["confidence"],
+                )
+            )
+            mapped += overlap_end - overlap_start
+        if mapped == 0:
+            raise DetectorProviderError(
+                "range_mismatch", "Pangram risk window could not be mapped to a paragraph", retryable=False,
+                request_id=request_id,
+            )
+    return spans
 
 
 def _json_object(provider: str, response: httpx.Response) -> dict[str, Any]:
@@ -506,138 +489,32 @@ def _raise_for_provider_status(provider: str, response: httpx.Response, request_
     if code in {401, 403}:
         raise DetectorProviderError(
             "authentication_failed", f"{provider} authentication or authorization failed", retryable=False,
-            status_code=code, request_id=request_id
+            status_code=code, request_id=request_id,
         )
     if code == 402:
         raise DetectorProviderError(
             "insufficient_credits", f"{provider} has insufficient credits", retryable=False,
-            status_code=code, request_id=request_id
+            status_code=code, request_id=request_id,
         )
     if code == 429:
         raise DetectorProviderError(
             "rate_limited", f"{provider} rate limit was reached", retryable=True,
-            status_code=code, request_id=request_id
+            status_code=code, request_id=request_id,
         )
     if code in {400, 404, 409, 413, 422}:
         raise DetectorProviderError(
             "invalid_request", f"{provider} rejected the detection request", retryable=False,
-            status_code=code, request_id=request_id
+            status_code=code, request_id=request_id,
         )
     if code in {408, 425, 500, 502, 503, 504}:
         raise DetectorProviderError(
             "service_unavailable", f"{provider} is temporarily unavailable", retryable=True,
-            status_code=code, request_id=request_id
+            status_code=code, request_id=request_id,
         )
     raise DetectorProviderError(
-        "provider_failed", f"{provider} request failed", retryable=False, status_code=code, request_id=request_id
+        "provider_failed", f"{provider} request failed", retryable=False, status_code=code,
+        request_id=request_id,
     )
-
-
-def _parse_copyleaks_expiry(value: Any) -> datetime:
-    if isinstance(value, str) and value.strip():
-        try:
-            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=timezone.utc)
-            return parsed.astimezone(timezone.utc)
-        except ValueError:
-            raise DetectorProviderError(
-                "invalid_response", "Copyleaks login returned an invalid token expiry", retryable=False
-            )
-    if value not in {None, ""}:
-        raise DetectorProviderError(
-            "invalid_response", "Copyleaks login returned an invalid token expiry", retryable=False
-        )
-    # Official tokens last 48 hours; use a conservative local cache lifetime.
-    return datetime.now(timezone.utc) + timedelta(hours=47)
-
-
-def _validate_provider_range(
-    text: str, start: int, end: int, provider: str, request_id: str | None = None
-) -> None:
-    if start < 0 or end <= start or end > len(text):
-        raise DetectorProviderError(
-            "range_mismatch", f"{provider} returned an out-of-range character span", retryable=False,
-            request_id=request_id
-        )
-
-
-def _global_windows_to_paragraphs(paragraphs: list[dict], windows: list[dict]) -> list[ProviderSpan]:
-    offsets: list[tuple[dict, int, int]] = []
-    cursor = 0
-    for paragraph in paragraphs:
-        start = cursor
-        end = start + len(paragraph["text"])
-        offsets.append((paragraph, start, end))
-        cursor = end + 2
-    spans: list[ProviderSpan] = []
-    for row in windows:
-        global_start = int(row.get("start", row.get("start_index", 0)))
-        global_end = int(row.get("end", row.get("end_index", global_start)))
-        score = float(row.get("score", row.get("probability", 0.5)))
-        confidence_raw = row.get("confidence")
-        confidence = float(confidence_raw) if confidence_raw is not None else None
-        for paragraph, start, end in offsets:
-            overlap_start = max(global_start, start)
-            overlap_end = min(global_end, end)
-            if overlap_end > overlap_start:
-                spans.append(
-                    ProviderSpan(paragraph["id"], overlap_start - start, overlap_end - start, score, confidence)
-                )
-    return spans
-
-
-def _global_windows_to_sentences(paragraphs: list[dict], windows: list[dict]) -> list[ProviderSpan]:
-    exact = _global_windows_to_paragraphs(paragraphs, windows)
-    paragraph_map = {item["id"]: item["text"] for item in paragraphs}
-    grouped: dict[tuple[str, int, int], list[ProviderSpan]] = {}
-    for span in exact:
-        for start, end, _ in sentence_ranges(paragraph_map[span.paragraph_id]):
-            if min(span.end, end) > max(span.start, start):
-                grouped.setdefault((span.paragraph_id, start, end), []).append(span)
-    output: list[ProviderSpan] = []
-    for (paragraph_id, start, end), rows in grouped.items():
-        confidences = [row.confidence for row in rows if row.confidence is not None]
-        output.append(
-            ProviderSpan(
-                paragraph_id,
-                start,
-                end,
-                max(row.score for row in rows),
-                min(confidences) if confidences else None,
-            )
-        )
-    order = {item["id"]: index for index, item in enumerate(paragraphs)}
-    return sorted(output, key=lambda item: (order[item.paragraph_id], item.start, item.end))
-
-
-def _serialize_provider(result: ProviderResult) -> dict[str, Any]:
-    return {
-        "overallScore": result.overall_score,
-        "sentenceSpans": [
-            {
-                "paragraphId": span.paragraph_id,
-                "start": span.start,
-                "end": span.end,
-                "score": round(span.score, 3),
-                "confidence": round(span.confidence, 3) if span.confidence is not None else None,
-            }
-            for span in result.sentence_spans
-        ],
-        "confidence": round(result.confidence, 3) if result.confidence is not None else None,
-        "provider": result.provider,
-        "providerModelVersion": result.provider_model_version,
-        "requestId": result.request_id,
-        "warnings": result.warnings,
-        "isMock": result.is_mock,
-        "latencyMs": result.latency_ms,
-        "status": result.status,
-        "error": result.error,
-        # Backward-compatible display aliases.
-        "name": result.provider,
-        "modelVersion": result.provider_model_version,
-        "estimate": result.overall_score,
-    }
 
 
 async def _call_provider(
@@ -650,9 +527,12 @@ async def _call_provider(
         return ProviderResult(
             provider=detector.name,
             provider_model_version=None,
-            overall_score=None,
-            sentence_spans=[],
-            confidence=None,
+            prediction=None,
+            fraction_ai=None,
+            fraction_ai_assisted=None,
+            fraction_human=None,
+            qualifying_words=sum(word_count(item["text"]) for item in paragraphs),
+            spans=[],
             request_id=error.request_id,
             warnings=[],
             is_mock=False,
@@ -660,172 +540,98 @@ async def _call_provider(
             status="failed",
             error={"code": error.code, "message": error.message, "retryable": error.retryable},
         )
-    except httpx.TimeoutException:
-        return _unexpected_provider_failure(detector.name, started, "timeout", "Detection provider timed out", True)
-    except httpx.HTTPError:
-        return _unexpected_provider_failure(
-            detector.name, started, "service_unavailable", "Detection provider is unavailable", True
-        )
-    except (KeyError, TypeError, ValueError, OverflowError):
-        return _unexpected_provider_failure(
-            detector.name, started, "invalid_response", "Detection provider returned an invalid response", False
-        )
+    except (httpx.HTTPError, KeyError, TypeError, ValueError, OverflowError):
+        return _unexpected_provider_failure(detector.name, paragraphs, started)
     except Exception:
-        return _unexpected_provider_failure(
-            detector.name, started, "provider_failed", "Detection provider failed unexpectedly", False
-        )
+        return _unexpected_provider_failure(detector.name, paragraphs, started)
 
 
 def _unexpected_provider_failure(
-    provider: str, started: float, code: str, message: str, retryable: bool
+    provider: str, paragraphs: list[dict], started: float
 ) -> ProviderResult:
     return ProviderResult(
         provider=provider,
         provider_model_version=None,
-        overall_score=None,
-        sentence_spans=[],
-        confidence=None,
+        prediction=None,
+        fraction_ai=None,
+        fraction_ai_assisted=None,
+        fraction_human=None,
+        qualifying_words=sum(word_count(item["text"]) for item in paragraphs),
+        spans=[],
         request_id=None,
         warnings=[],
         is_mock=False,
         latency_ms=round((time.perf_counter() - started) * 1000),
         status="failed",
-        error={"code": code, "message": message, "retryable": retryable},
+        error={
+            "code": "provider_failed",
+            "message": "Detection provider failed unexpectedly",
+            "retryable": False,
+        },
     )
 
 
-def _risk_band(score: float) -> str:
-    if score < 20:
-        return "low"
-    if score < 50:
-        return "elevated"
-    return "high"
-
-
-def _merge_provider_spans(results: list[ProviderResult], paragraphs: list[dict]) -> list[dict[str, Any]]:
-    order = {item["id"]: index for index, item in enumerate(paragraphs)}
-    merged: list[dict[str, Any]] = []
-    for paragraph in paragraphs:
-        spans = [
-            (result.provider, span)
-            for result in results
-            if result.status == "success"
-            for span in result.sentence_spans
-            if span.paragraph_id == paragraph["id"]
-        ]
-        boundaries = sorted({point for _, span in spans for point in (span.start, span.end)})
-        for start, end in zip(boundaries, boundaries[1:], strict=False):
-            active: dict[str, float] = {}
-            for provider, span in spans:
-                if span.start <= start and span.end >= end:
-                    active[provider] = max(active.get(provider, 0.0), span.score)
-            if not active or end <= start:
-                continue
-            providers = sorted(active)
-            consensus = len(providers) >= 2
-            score = min(active.values()) if consensus else max(active.values())
-            item = {
-                "paragraphId": paragraph["id"],
-                "start": start,
-                "end": end,
-                "score": round(score, 3),
-                "evidence": "consensus" if consensus else "single",
-                "providers": providers,
-            }
-            if (
-                merged
-                and merged[-1]["paragraphId"] == item["paragraphId"]
-                and merged[-1]["end"] == item["start"]
-                and merged[-1]["evidence"] == item["evidence"]
-                and merged[-1]["providers"] == item["providers"]
-                and merged[-1]["score"] == item["score"]
-            ):
-                merged[-1]["end"] = end
-            else:
-                merged.append(item)
-    return sorted(merged, key=lambda item: (order[item["paragraphId"]], item["start"], item["end"]))
-
-
-def _merge_results(results: list[ProviderResult], paragraphs: list[dict], requested_count: int) -> dict[str, Any]:
-    successful = [result for result in results if result.status == "success" and result.overall_score is not None]
-    failed = [result for result in results if result.status != "success"]
-    scores = [result.overall_score for result in successful if result.overall_score is not None]
-    overall_score: float | None = None
-    disagreement = False
-    fusion_status = "unavailable"
-    if requested_count == 1 and len(successful) == 1:
-        overall_score = successful[0].overall_score
-        fusion_status = "single-provider"
-    elif requested_count >= 2 and len(successful) == requested_count:
-        bands = {_risk_band(score) for score in scores}
-        if len(bands) == 1:
-            # Conservative consensus floor: never average uncalibrated provider scores.
-            overall_score = min(scores)
-            fusion_status = "provider-agreement"
-        else:
-            disagreement = True
-            fusion_status = "disagreement"
-    elif successful:
-        fusion_status = "partial"
-
-    low = min(scores) if scores else None
-    high = max(scores) if scores else None
-    confidence_values = [row.confidence for row in successful if row.confidence is not None]
-    confidence = min(confidence_values) if overall_score is not None and confidence_values else None
-    is_mock = bool(successful) and any(result.is_mock for result in successful)
-    label = {
-        "provider-agreement": "Provider agreement",
-        "single-provider": "Single-provider estimate",
-        "disagreement": "Detection results disagree",
-        "partial": "Provider unavailable",
-        "unavailable": "Detection unavailable",
-    }[fusion_status]
-    warnings = [warning for result in results for warning in result.warnings]
-    if disagreement:
-        warnings.append("Provider risk bands disagree; no fused percentage is reported.")
-    if failed:
-        warnings.append("At least one provider failed; remaining evidence is not treated as dual confirmation.")
+def _serialize_result(result: ProviderResult, analyzed_version_id: str) -> dict[str, Any]:
+    successful = result.status == "success"
+    ai_percent = round(result.fraction_ai * 100, 1) if result.fraction_ai is not None else None
+    assisted_percent = (
+        round(result.fraction_ai_assisted * 100, 1) if result.fraction_ai_assisted is not None else None
+    )
+    human_percent = round(result.fraction_human * 100, 1) if result.fraction_human is not None else None
+    combined = (
+        round((result.fraction_ai + result.fraction_ai_assisted) * 100, 1)
+        if result.fraction_ai is not None and result.fraction_ai_assisted is not None
+        else None
+    )
+    warnings = list(result.warnings)
+    if not successful:
+        warnings.append("The detector was unavailable, so no risk percentage or highlight was saved.")
     return {
-        "overallScore": overall_score,
-        "estimate": overall_score,
-        "confidence": round(confidence, 3) if confidence is not None else None,
-        "uncertainty": {"low": low, "high": high},
-        "qualifyingWords": sum(word_count(item["text"]) for item in paragraphs),
-        "isMock": is_mock,
-        "label": label,
-        "fusionStatus": fusion_status,
-        "disagreement": disagreement,
-        "fusionRule": "Same-band providers use the lower score as a conservative consensus floor; disagreement or partial failure has no fused percentage.",
-        "spans": _merge_provider_spans(results, paragraphs),
-        "providers": [_serialize_provider(result) for result in results],
+        "provider": result.provider,
+        "providerModelVersion": result.provider_model_version,
+        "isMock": result.is_mock,
+        "status": result.status,
+        "error": result.error,
+        "prediction": result.prediction,
+        "qualifyingWords": result.qualifying_words,
+        "aiGeneratedPercent": ai_percent,
+        "aiAssistedPercent": assisted_percent,
+        "humanPercent": human_percent,
+        "combinedRiskPercent": combined,
+        "spans": [
+            {
+                "paragraphId": span.paragraph_id,
+                "start": span.start,
+                "end": span.end,
+                "classification": span.classification,
+                "score": round(span.score, 3),
+                "confidence": round(span.confidence, 3),
+            }
+            for span in result.spans
+        ],
+        "requestId": result.request_id,
         "warnings": warnings,
-        "disclaimer": "This is a probabilistic writing-pattern risk signal, not proof of authorship or academic misconduct.",
+        "disclaimer": DISCLAIMER,
+        "analyzedVersionId": analyzed_version_id,
+        "analyzedAt": datetime.now(timezone.utc).isoformat(),
+        "latencyMs": result.latency_ms,
     }
 
 
-async def run_detection(paragraphs: list[dict], idempotency_key: str | None = None) -> dict[str, Any]:
+async def run_detection(
+    paragraphs: list[dict], idempotency_key: str | None = None, analyzed_version_id: str = ""
+) -> dict[str, Any]:
     settings = get_settings()
-    detectors: list[DetectorProvider]
     if settings.detector_mode == "mock":
-        detectors = [
-            MockDetectorProvider("Mock Primary", "primary", 12),
-            MockDetectorProvider("Mock Review", "review", 9),
-        ]
+        detector: DetectorProvider = MockPangramDetectorProvider()
     elif settings.detector_mode == "pangram":
-        detectors = [PangramDetectorProvider()]
-    elif settings.detector_mode == "copyleaks":
-        detectors = [CopyleaksDetectorProvider()]
-    elif settings.detector_mode == "dual":
-        detectors = [PangramDetectorProvider(), CopyleaksDetectorProvider()]
+        detector = PangramDetectorProvider()
     else:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unsupported detector mode")
     try:
-        for detector in detectors:
-            detector.validate_configuration()
+        detector.validate_configuration()
     except DetectorConfigurationError as error:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
     operation_key = idempotency_key or "analysis-" + hashlib.sha256(_document_text(paragraphs).encode()).hexdigest()
-    results = await asyncio.gather(
-        *[_call_provider(detector, paragraphs, f"{operation_key}:{detector.name.lower()}") for detector in detectors]
-    )
-    return _merge_results(list(results), paragraphs, len(detectors))
+    result = await _call_provider(detector, paragraphs, operation_key)
+    return _serialize_result(result, analyzed_version_id)

@@ -4,42 +4,48 @@ export type EvidenceSpan = {
   paragraphId: string;
   start: number;
   end: number;
+  classification: "ai_generated" | "ai_assisted";
   score: number;
-  evidence: "consensus" | "single";
-  providers: string[];
+  confidence: number;
 };
 
-export type DetectionResult = {
-  overallScore: number | null;
-  estimate: number | null;
-  confidence: number | null;
-  uncertainty: { low: number | null; high: number | null };
-  qualifyingWords: number;
+export type PangramDetectionResult = {
+  provider: "Pangram" | "Mock Pangram";
+  providerModelVersion: string | null;
   isMock: boolean;
-  label: string;
-  fusionStatus: "provider-agreement" | "single-provider" | "disagreement" | "partial" | "unavailable";
-  disagreement: boolean;
-  fusionRule: string;
+  status: "success" | "failed";
+  error: null | { code: string; message: string; retryable: boolean };
+  prediction: string | null;
+  qualifyingWords: number;
+  aiGeneratedPercent: number | null;
+  aiAssistedPercent: number | null;
+  humanPercent: number | null;
+  combinedRiskPercent: number | null;
   spans: EvidenceSpan[];
-  providers: Array<{
-    overallScore: number | null;
-    sentenceSpans: Array<{ paragraphId: string; start: number; end: number; score: number; confidence: number | null }>;
-    confidence: number | null;
-    provider: string;
-    providerModelVersion: string | null;
-    requestId: string | null;
-    warnings: string[];
-    isMock: boolean;
-    latencyMs: number;
-    status: "success" | "failed";
-    error: null | { code: string; message: string; retryable: boolean };
-    name: string;
-    modelVersion: string | null;
-    estimate: number | null;
-  }>;
+  requestId: string | null;
   warnings: string[];
   disclaimer: string;
+  analyzedVersionId: string;
+  analyzedAt: string;
+  latencyMs: number;
+  riskComparison?: {
+    beforePercent: number;
+    afterPercent: number;
+    changePercentagePoints: number;
+    beforeAnalysisId: string;
+  };
 };
+
+export type LegacyDetectionResult = {
+  isMock: boolean;
+  estimate?: number | null;
+  label?: string;
+  spans?: unknown[];
+  warnings?: string[];
+  disclaimer?: string;
+};
+
+export type DetectionResult = PangramDetectionResult | LegacyDetectionResult;
 
 export type Patch = {
   id: string;

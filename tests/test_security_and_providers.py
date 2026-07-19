@@ -14,7 +14,7 @@ from services.api.app.database import session_scope
 from services.api.app.documents import DOCX_MIME, MAX_UNCOMPRESSED_BYTES, validate_docx_upload
 from services.api.app.main import app
 from services.api.app.models import AuditEvent, Document
-from services.api.app.providers.detectors import _global_windows_to_paragraphs, run_detection
+from services.api.app.providers.detectors import _map_windows_to_paragraphs, run_detection
 from services.api.app.providers import detectors as detector_module
 from services.api.app.providers import rewriters as rewriter_module
 from services.api.app.providers.http_client import post_json_with_retry
@@ -32,7 +32,9 @@ def test_mock_detection_is_deterministic_and_ranges_are_valid():
     ]
     first = asyncio.run(run_detection(paragraphs))
     second = asyncio.run(run_detection(paragraphs))
-    assert first == second
+    assert {key: value for key, value in first.items() if key != "analyzedAt"} == {
+        key: value for key, value in second.items() if key != "analyzedAt"
+    }
     assert first["isMock"] is True
     for span in first["spans"]:
         paragraph = next(row for row in paragraphs if row["id"] == span["paragraphId"])
@@ -47,17 +49,30 @@ def test_mock_rewriter_handles_punctuated_formulaic_transitions(phrase: str):
     assert phrase not in revised
 
 
+def test_selected_passage_is_rewritten_without_sending_the_rest_of_the_paragraph():
+    context = "This opening sentence supplies background that is not selected."
+    selected = "Moreover, the evidence needs a narrower interpretation."
+    proposal = asyncio.run(
+        propose_rewrite("Make the evidence connection more specific", "p1", f"{context} {selected}", selected)
+    )
+    assert proposal["originalText"] == selected
+    assert proposal["revisedText"] != selected
+    assert context not in proposal["revisedText"]
+
+
 def test_provider_global_ranges_split_at_paragraph_boundaries():
     paragraphs = [{"id": "p1", "text": "Alpha"}, {"id": "p2", "text": "Bravo"}]
-    spans = _global_windows_to_paragraphs(paragraphs, [{"start": 3, "end": 10, "score": 0.8}])
+    spans = _map_windows_to_paragraphs(
+        paragraphs,
+        [{"start": 3, "end": 10, "classification": "ai_generated", "score": 0.8, "confidence": 0.9}],
+        "task-range",
+    )
     assert [(span.paragraph_id, span.start, span.end) for span in spans] == [("p1", 3, 5), ("p2", 0, 3)]
 
 
 def test_real_provider_modes_fail_closed_without_credentials(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("DETECTOR_MODE", "dual")
+    monkeypatch.setenv("DETECTOR_MODE", "pangram")
     monkeypatch.delenv("PANGRAM_API_KEY", raising=False)
-    monkeypatch.delenv("COPYLEAKS_EMAIL", raising=False)
-    monkeypatch.delenv("COPYLEAKS_API_KEY", raising=False)
     get_settings.cache_clear()
     with pytest.raises(HTTPException) as detector_error:
         asyncio.run(run_detection([{"id": "p", "text": "Evidence must be checked."}]))
@@ -248,9 +263,9 @@ def test_invalid_provider_payload_becomes_controlled_unavailable_result(monkeypa
     monkeypatch.setattr(detector_module, "post_json_with_retry", invalid_post)
     get_settings.cache_clear()
     result = asyncio.run(run_detection([{"id": "p", "text": "Evidence must be checked."}]))
-    assert result["overallScore"] is None
-    assert result["fusionStatus"] == "unavailable"
-    assert result["providers"][0]["error"]["code"] == "invalid_response"
+    assert result["combinedRiskPercent"] is None
+    assert result["status"] == "failed"
+    assert result["error"]["code"] == "invalid_response"
     monkeypatch.setenv("DETECTOR_MODE", "mock")
     monkeypatch.setenv("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", "0")
     get_settings.cache_clear()

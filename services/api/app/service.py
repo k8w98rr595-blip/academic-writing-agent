@@ -126,6 +126,38 @@ def document_payload(db: Session, document: Document) -> dict:
     }
 
 
+def add_risk_comparison(db: Session, analysis: AnalysisRun, result: dict) -> dict:
+    """Attach an honest before/after comparison without mutating old analysis rows."""
+    current_score = result.get("combinedRiskPercent")
+    if not isinstance(current_score, (int, float)) or isinstance(current_score, bool):
+        return result
+    previous = db.scalar(
+        select(AnalysisRun)
+        .where(
+            AnalysisRun.document_id == analysis.document_id,
+            AnalysisRun.id != analysis.id,
+            AnalysisRun.status == "completed",
+        )
+        .order_by(AnalysisRun.created_at.desc())
+        .limit(1)
+    )
+    if not previous or not isinstance(previous.result, dict):
+        return result
+    previous_score = previous.result.get("combinedRiskPercent")
+    if not isinstance(previous_score, (int, float)) or isinstance(previous_score, bool):
+        # Legacy dual-provider results remain comparable only when they stored a real fused estimate.
+        previous_score = previous.result.get("estimate")
+    if not isinstance(previous_score, (int, float)) or isinstance(previous_score, bool):
+        return result
+    result["riskComparison"] = {
+        "beforePercent": round(float(previous_score), 1),
+        "afterPercent": round(float(current_score), 1),
+        "changePercentagePoints": round(float(current_score) - float(previous_score), 1),
+        "beforeAnalysisId": previous.id,
+    }
+    return result
+
+
 def delete_document_tree(db: Session, document: Document) -> None:
     document_id = document.id
     db.execute(delete(PatchRecord).where(PatchRecord.document_id == document_id))

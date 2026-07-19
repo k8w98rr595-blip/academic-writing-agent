@@ -21,7 +21,7 @@ After server-only keys, data-processing terms, retention, and cost approval are 
 
 ```powershell
 $env:DETECTOR_DATA_PROCESSING_ACKNOWLEDGED = "1"
-.\.venv\Scripts\python.exe -m benchmark.run_providers --manifest benchmark/manifests/private/v1.0.0.jsonl --output benchmark/predictions/private/dual-v1.0.0.jsonl --run-id dual-v1.0.0-2026-07 --mode dual --confirm-provider-upload
+.\.venv\Scripts\python.exe -m benchmark.run_providers --manifest benchmark/manifests/private/v1.0.0.jsonl --output benchmark/predictions/private/pangram-v1.0.0.jsonl --run-id pangram-v1.0.0-2026-07 --mode pangram --confirm-provider-upload
 ```
 
 The command reads credentials only through the backend environment, never prints them, refuses to overwrite a run by default, and blocks blind-set uploads unless the separate one-use blind flags are supplied.
@@ -38,6 +38,6 @@ Freeze provider versions, prompts, preprocessing, dataset version, seed, and thr
 
 ## What this benchmark can support
 
-The checked-in development report supports only the statement that Paperlight has a reproducible, versioned framework reporting overall, grouped, calibration, span, agreement, threshold, confidence-interval, and drift metrics. It cannot support a claim that Pangram, Copyleaks, Paperlight, or any threshold is accurate for students. After a representative private evaluation and untouched blind run, every claim must name the population, dataset version, provider/model version, threshold, 95% confidence interval, and observed human false-positive rate.
+The checked-in development report supports only the statement that Paperlight has a reproducible, versioned framework reporting overall, grouped, calibration, span, agreement, threshold, confidence-interval, and drift metrics. It cannot support a claim that Pangram, Paperlight, or any threshold is accurate for students. After a representative private evaluation and untouched blind run, every claim must name the population, dataset version, provider/model version, threshold, 95% confidence interval, and observed human false-positive rate.
 
 See `DATA_DICTIONARY.md` for labels, `GOVERNANCE.md` for authorization/privacy, `SAMPLING_PLAN.md` for formal quotas, and `VERSIONING.md` plus `CHANGELOG.md` for immutable releases.

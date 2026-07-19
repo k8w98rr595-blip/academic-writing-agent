@@ -20,7 +20,7 @@ The following checks have passed:
 - The credential-free production smoke workflow verifies Mock detector mode, DeepSeek rewrite mode, configured owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
 - The final 2026-07-15 owner flow completed against the hardened deployment with a 1,127-word synthetic paper: fresh login, labeled Mock analysis, fail-closed URL protection, real DeepSeek V4 patch, V4 Flash semantic validation, patch acceptance, stale-result transition, fresh reanalysis, valid DOCX export, immediate document-tree deletion, empty-workspace verification, and logout.
 - The DeepSeek native low-balance warning is enabled at CNY 10. The post-test dashboard showed CNY 19.83 balance and CNY 0.16 cumulative spend; no recharge, purchase, payment change, or plan upgrade was made.
-- Current local verification covers 37 backend/security tests, 2 frontend tests, 4 release-audit tests, type checking, the static Pages build, and expanded static secret scanning.
+- Current local verification covers 74 backend/security/provider/workflow tests, 2 frontend unit tests, 4 release-audit tests, type checking, the static Pages build, expanded static secret scanning, and a browser-run desktop/mobile Mock closure check.
 
 ## Production configuration
 
@@ -52,8 +52,8 @@ The manual `Production smoke` workflow is the remote acceptance check when the l
 
 ## Deliberate future gates
 
-Pangram and Copyleaks credentials remain unset. Real detector claims, a Turnitin comparison, public registration, payments, refunds, student uploads, provider data-processing agreements, retention guarantees, benchmark calibration, and China-facing compliance are not part of this owner-only release and must be completed before public rollout. DeepSeek production access must remain server-only and subject to the same data-processing and retention review before any student pilot.
+Pangram credentials remain unset. Real detector claims, a Turnitin comparison, public registration, payments, refunds, student uploads, provider data-processing agreements, retention guarantees, benchmark calibration, and China-facing compliance are not part of this owner-only release and must be completed before public rollout. DeepSeek production access must remain server-only and subject to the same data-processing and retention review before any student pilot.
 
-## Real detector implementation handoff (2026-07-16)
+## Single-detector implementation handoff (2026-07-19)
 
-The source now contains current Pangram async-task and Copyleaks synchronous-text adapters, a 48-hour Copyleaks token cache, strict response/range validation, bounded retries, conservative non-average fusion, explicit disagreement/partial states, and deep-blue/light-blue evidence rendering. Production remains on `DETECTOR_MODE=mock`; no Pangram or Copyleaks key was added or used. Follow `docs/PROVIDER_SETUP.md` only after reviewing `docs/DETECTOR_PROVIDERS.md`, then run the cost-confirmed synthetic acceptance script before reporting real detection available.
+The source now contains one current Pangram async-task adapter, strict response/range validation, no-repeat protection for ambiguous task submission, bounded safe polling retries, and deep-blue AI-generated/light-blue AI-assisted evidence rendering. Copyleaks, dual-provider fusion, consensus, and disagreement handling are no longer active product capabilities. Existing legacy analysis JSON remains readable as a non-highlighting historical record. Production remains on `DETECTOR_MODE=mock`; no Pangram key was added or used. Follow `docs/PROVIDER_SETUP.md` only after reviewing `docs/DETECTOR_PROVIDERS.md`, then run the cost-confirmed synthetic acceptance script before reporting real detection available.

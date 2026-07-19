@@ -25,7 +25,7 @@ Create a service from the root Dockerfile, attach a persistent volume at `/data`
 
 Do not deploy with the local bootstrap password file. Generate production password and TOTP values separately and store only their hash/secret in Railway variables.
 
-Real detector deployment additionally requires the server-only variables documented in [Provider setup](PROVIDER_SETUP.md). `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=1` is a legal/operational gate, not a technical default; keep it at `0` until both suppliers' applicable data terms are confirmed. The official endpoint hosts are enforced in production to prevent redirecting provider keys to an arbitrary server.
+Real Pangram deployment additionally requires the server-only variables documented in [Provider setup](PROVIDER_SETUP.md). `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=1` is a legal/operational gate, not a technical default; keep it at `0` until Pangram's applicable data terms are confirmed. The official endpoint host is enforced in every real-provider environment to prevent redirecting the key to an arbitrary server.
 
 ## Managed services
 

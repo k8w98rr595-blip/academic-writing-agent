@@ -1,6 +1,6 @@
 import type { EvidenceSpan, Paragraph } from "./types";
 
-export type HighlightChunk = { text: string; evidence?: "consensus" | "single" };
+export type HighlightChunk = { text: string; classification?: "ai_generated" | "ai_assisted" };
 
 export function splitHighlights(text: string, spans: EvidenceSpan[]): HighlightChunk[] {
   const normalized = spans
@@ -11,7 +11,7 @@ export function splitHighlights(text: string, spans: EvidenceSpan[]): HighlightC
   for (const span of normalized) {
     if (span.start < cursor) continue;
     if (span.start > cursor) chunks.push({ text: text.slice(cursor, span.start) });
-    chunks.push({ text: text.slice(span.start, span.end), evidence: span.evidence });
+    chunks.push({ text: text.slice(span.start, span.end), classification: span.classification });
     cursor = span.end;
   }
   if (cursor < text.length) chunks.push({ text: text.slice(cursor) });

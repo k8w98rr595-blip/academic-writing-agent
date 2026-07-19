@@ -12,9 +12,8 @@ flowchart LR
   O --> M["MinIO or S3-compatible storage"]
   A --> Q["Redis / Celery"]
   Q --> W["Analysis worker + retention beat"]
-  W --> DP["Mock Primary + Mock Review"]
+  W --> DP["Deterministic Mock Pangram"]
   W -. "credential-gated" .-> PG["Pangram"]
-  W -. "credential-gated" .-> CL["Copyleaks"]
   A -. "credential-gated" .-> DS["DeepSeek V4-Pro rewrite"]
   DS --> DV["DeepSeek V4-Flash semantic validation"]
 ```
@@ -24,7 +23,7 @@ flowchart LR
 ## 核心领域规则
 
 - 文稿：800–5,000 个英文单词，稳定段落 ID，默认七天到期。
-- 检测：双 Provider 结果、版本号、概率区间、句子范围和明确免责声明；Mock 永远显示演示身份。
+- 检测：单 Pangram 结果、模型/接口版本、三类概率、精确字符范围和明确免责声明；Mock 永远显示演示身份。
 - 改写：V4-Pro 只返回结构化补丁，V4-Flash 独立检查语义漂移；模型不直接覆盖正文，数字、比例、引文、引用标记、URL、缩写和专有项仍由服务端规则保护。
 - 版本：手工保存、补丁接受和恢复都创建新版本，不覆盖历史。
 - 文件：DOCX 经过文件名、MIME、ZIP、展开体积、条目、宏、路径和外部关系检查。
@@ -34,7 +33,7 @@ flowchart LR
 ## 当前产品边界
 
 1. **不能宣称与 Turnitin 同等。** Turnitin 的商业语料库和内部判定方法不可复刻。当前 Mock 仅用于交互测试；未来真实结果仍只能被描述为概率估计。
-2. **AI 检测不能证明作者身份。** 人类文本会被误报，混合写作和编辑会改变分布。界面必须保留不确定区间、Provider 版本和免责声明。
+2. **AI 检测不能证明作者身份。** 人类文本会被误报，混合写作和编辑会改变分布。界面必须保留 Pangram 版本、三类风险比例和免责声明。
 3. **不提供论文查重。** Paperlight 不计算全文相似度，也不连接期刊、作业库或互联网查重语料；产品能力只围绕 AI 写作风险信号和作者可控修改。
 4. **“降 AI 率”存在学术诚信风险。** 产品按写作质量、可解释补丁和作者确认定位；不提供绕过检测保证，不自动生成来源或事实。
 5. **真实 Provider 合同仍需确认。** 模型 ID、响应结构、费率、超时、数据保留和地域条款必须在获得 Key 后用供应商当前文档校验。

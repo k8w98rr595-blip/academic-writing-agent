@@ -5,13 +5,13 @@ describe("text helpers", () => {
   it("splits non-overlapping evidence ranges", () => {
     expect(
       splitHighlights("Alpha beta gamma", [
-        { paragraphId: "p1", start: 0, end: 5, score: 0.9, evidence: "consensus", providers: ["a", "b"] },
-        { paragraphId: "p1", start: 11, end: 16, score: 0.7, evidence: "single", providers: ["a"] },
+        { paragraphId: "p1", start: 0, end: 5, score: 0.9, confidence: 0.9, classification: "ai_generated" },
+        { paragraphId: "p1", start: 11, end: 16, score: 0.7, confidence: 0.7, classification: "ai_assisted" },
       ]),
     ).toEqual([
-      { text: "Alpha", evidence: "consensus" },
+      { text: "Alpha", classification: "ai_generated" },
       { text: " beta " },
-      { text: "gamma", evidence: "single" },
+      { text: "gamma", classification: "ai_assisted" },
     ]);
   });
 

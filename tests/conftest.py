@@ -19,8 +19,6 @@ os.environ.update(
         "DETECTOR_MODE": "mock",
         "DETECTOR_DATA_PROCESSING_ACKNOWLEDGED": "0",
         "PANGRAM_API_URL": "https://text.external-api.pangram.com",
-        "COPYLEAKS_API_URL": "https://api.copyleaks.com",
-        "COPYLEAKS_LOGIN_URL": "https://id.copyleaks.com/v3/account/login/api",
         "REWRITE_MODE": "mock",
         "ALLOWED_ORIGINS": "http://testserver",
     }
@@ -33,10 +31,13 @@ os.environ["OWNER_PASSWORD_HASH"] = PasswordHasher(time_cost=1, memory_cost=8192
 from fastapi.testclient import TestClient  # noqa: E402
 from services.api.app.database import Base, engine  # noqa: E402
 from services.api.app.main import app  # noqa: E402
+from services.api.app.security import login_limiter  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def clean_database():
+    with login_limiter._lock:
+        login_limiter._events.clear()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     yield

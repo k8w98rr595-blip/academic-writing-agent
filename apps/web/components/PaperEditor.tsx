@@ -13,9 +13,10 @@ type Props = {
   onDirty: () => void;
   onParagraphBlur: (paragraphId: string, value: string) => void;
   onSelection: (selection: Selection) => void;
+  onRiskSpan: (selection: Selection) => void;
 };
 
-export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur, onSelection }: Props) {
+export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur, onSelection, onRiskSpan }: Props) {
   function captureSelection(event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) {
     const selection = window.getSelection();
     const target = event.currentTarget;
@@ -50,7 +51,22 @@ export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur
             onKeyUp={captureSelection}
             onPaste={pastePlain}
           >
-            {chunks.map((chunk, chunkIndex) => chunk.evidence ? <mark key={`${paragraph.id}-${chunkIndex}`} className={`evidence ${chunk.evidence}`}>{chunk.text}</mark> : chunk.text)}
+            {chunks.map((chunk, chunkIndex) => chunk.classification ? <mark
+              key={`${paragraph.id}-${chunkIndex}`}
+              className={`evidence ${chunk.classification}`}
+              role="button"
+              tabIndex={0}
+              title="发送到写作助手审阅"
+              onClick={(event) => { event.stopPropagation(); onRiskSpan({ paragraphId: paragraph.id, text: chunk.text }); }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onRiskSpan({ paragraphId: paragraph.id, text: chunk.text });
+                }
+              }}
+              onKeyUp={(event) => event.stopPropagation()}
+            >{chunk.text}</mark> : chunk.text)}
           </p>
         );
       })}

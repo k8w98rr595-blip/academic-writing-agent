@@ -34,43 +34,39 @@ def synthetic_paper() -> str:
         "review alternative explanations, and preserve transparent reasoning before drawing a limited conclusion."
     )
     body = " ".join(f"{sentence} Test case {index} remains nonpersonal and reproducible." for index in range(1, 46))
-    return f"Synthetic Provider Acceptance\n\n{body}"
+    return f"Synthetic Pangram Acceptance\n\n{body}"
 
 
-def validate_provider(provider: dict[str, Any], expected_name: str) -> None:
+def validate_provider(result: dict[str, Any], expected_name: str = "Pangram") -> None:
     required = {
-        "overallScore",
-        "sentenceSpans",
-        "confidence",
-        "provider",
-        "providerModelVersion",
-        "requestId",
-        "warnings",
-        "isMock",
-        "latencyMs",
-        "status",
-        "error",
+        "provider", "providerModelVersion", "isMock", "status", "error", "prediction",
+        "qualifyingWords", "aiGeneratedPercent", "aiAssistedPercent", "humanPercent",
+        "combinedRiskPercent", "spans", "warnings", "disclaimer", "analyzedVersionId",
+        "analyzedAt", "requestId", "latencyMs",
     }
-    missing = sorted(required - set(provider))
+    missing = sorted(required - set(result))
     if missing:
         raise RuntimeError(f"{expected_name} response is missing normalized fields: {', '.join(missing)}")
-    if provider["provider"] != expected_name:
+    if result["provider"] != expected_name:
         raise RuntimeError(f"Expected {expected_name}, received a different provider")
-    if provider["status"] != "success" or provider["error"] is not None:
-        message = provider.get("error", {}).get("message", "unknown provider failure") if provider.get("error") else "unknown provider failure"
+    if result["status"] != "success" or result["error"] is not None:
+        message = result.get("error", {}).get("message", "unknown provider failure") if result.get("error") else "unknown provider failure"
         raise RuntimeError(f"{expected_name} failed: {message}")
-    if provider["isMock"] is not False:
+    if result["isMock"] is not False:
         raise RuntimeError(f"{expected_name} returned a mock/sandbox result")
-    if provider["overallScore"] is None or not provider["providerModelVersion"] or not provider["requestId"]:
+    if result["combinedRiskPercent"] is None or not result["providerModelVersion"] or not result["requestId"]:
         raise RuntimeError(f"{expected_name} did not return a complete real result")
+    total = result["aiGeneratedPercent"] + result["aiAssistedPercent"] + result["humanPercent"]
+    if abs(total - 100) > 2:
+        raise RuntimeError("Pangram percentages do not form a valid authorship distribution")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run one paid synthetic Paperlight dual-detector acceptance flow.")
+    parser = argparse.ArgumentParser(description="Run one paid synthetic Paperlight Pangram acceptance flow.")
     parser.add_argument(
         "--confirm-cost",
         action="store_true",
-        help="Required acknowledgement that this script performs one real Pangram and one real Copyleaks analysis.",
+        help="Required acknowledgement that this script performs one real Pangram analysis.",
     )
     args = parser.parse_args()
     if not args.confirm_cost:
@@ -87,9 +83,8 @@ def main() -> int:
         try:
             health = client.get("/api/health")
             require_status(health, 200, "Health check")
-            provider_mode = health.json().get("providerMode", {})
-            if provider_mode.get("detector") != "dual":
-                raise RuntimeError("Production DETECTOR_MODE is not dual; no paid scan was started")
+            if health.json().get("providerMode", {}).get("detector") != "pangram":
+                raise RuntimeError("Production DETECTOR_MODE is not pangram; no paid scan was started")
 
             login = client.post(
                 "/api/v1/auth/login",
@@ -104,14 +99,14 @@ def main() -> int:
 
             created = client.post(
                 "/api/v1/documents",
-                data={"title": "Synthetic dual-provider acceptance", "text": synthetic_paper()},
+                data={"title": "Synthetic Pangram acceptance", "text": synthetic_paper()},
             )
             require_status(created, 201, "Synthetic document creation")
             document = created.json()["document"]
             document_id = document["id"]
 
             analysis = client.post(f"/api/v1/documents/{document_id}/analyses")
-            require_status(analysis, 201, "Dual-provider analysis")
+            require_status(analysis, 201, "Pangram analysis")
             deadline = time.monotonic() + 180
             while time.monotonic() < deadline:
                 current = client.get(f"/api/v1/documents/{document_id}")
@@ -124,26 +119,15 @@ def main() -> int:
                 raise RuntimeError("Analysis did not complete within 180 seconds")
 
             result = document["analysis"]["result"]
-            providers = {row.get("provider"): row for row in result.get("providers", [])}
-            validate_provider(providers.get("Pangram", {}), "Pangram")
-            validate_provider(providers.get("Copyleaks", {}), "Copyleaks")
-            if result.get("isMock") is not False:
-                raise RuntimeError("Top-level analysis was incorrectly labeled as mock")
-            if result.get("fusionStatus") not in {"provider-agreement", "disagreement"}:
-                raise RuntimeError("Dual analysis did not reach a valid two-provider terminal state")
-            if result.get("fusionStatus") == "disagreement" and result.get("overallScore") is not None:
-                raise RuntimeError("Disagreement incorrectly returned a fused percentage")
-
-            paragraph_lengths = {
-                row["id"]: len(row["text"]) for row in document["currentVersion"]["paragraphs"]
-            }
+            validate_provider(result)
+            paragraph_lengths = {row["id"]: len(row["text"]) for row in document["currentVersion"]["paragraphs"]}
             for span in result.get("spans", []):
                 if (
                     span.get("paragraphId") not in paragraph_lengths
                     or not 0 <= span.get("start", -1) < span.get("end", -1) <= paragraph_lengths[span["paragraphId"]]
-                    or span.get("evidence") not in {"single", "consensus"}
+                    or span.get("classification") not in {"ai_generated", "ai_assisted"}
                 ):
-                    raise RuntimeError("Fused sentence mapping contains an invalid range")
+                    raise RuntimeError("Pangram segment mapping contains an invalid range")
 
             exported = client.post(f"/api/v1/documents/{document_id}/exports")
             require_status(exported, 200, "DOCX export")
@@ -165,13 +149,12 @@ def main() -> int:
             document_id = ""
             remaining = client.get("/api/v1/documents")
             require_status(remaining, 200, "Residue check")
-            if any(row.get("title") == "Synthetic dual-provider acceptance" for row in remaining.json()["documents"]):
+            if any(row.get("title") == "Synthetic Pangram acceptance" for row in remaining.json()["documents"]):
                 raise RuntimeError("Synthetic document remained after deletion")
 
-            logout = client.post("/api/v1/auth/logout")
-            require_status(logout, 204, "Logout")
+            require_status(client.post("/api/v1/auth/logout"), 204, "Logout")
             logged_in = False
-            print("PASS: one synthetic dual-provider analysis, mapping check, DOCX export, stale transition, deletion, and logout completed.")
+            print("PASS: one synthetic Pangram analysis, mapping check, DOCX export, stale transition, deletion, and logout completed.")
             return 0
         finally:
             if document_id:

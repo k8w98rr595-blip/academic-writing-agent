@@ -31,7 +31,7 @@
 - Interactions: detector evidence, reviewable patch rejection, side-panel collapse/expand, and version navigation all remained usable.
 - Responsiveness: the 390 × 844 pass converts the rail to reachable bottom navigation, preserves the document title and new-document action, and keeps the editor readable without overlapping controls.
 - Accessibility: semantic buttons and labeled textboxes are present, primary states retain visible contrast, and focus styles remain enabled. The interface respects reduced-motion settings.
-- Residual difference: the implementation is slightly denser in the inspector because it exposes real provider metadata and quality checks. This is an intentional product-content difference, not a fidelity defect.
+- Residual difference: the implementation is slightly denser in the inspector because it exposes Pangram classification ratios and model metadata. This is an intentional product-content difference, not a fidelity defect.
 
 ## Result
 

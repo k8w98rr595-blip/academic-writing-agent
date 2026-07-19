@@ -24,7 +24,7 @@ The initializer never replaces an existing `.env.local` unless `--force` is supp
 
 ## Provider configuration
 
-Provider keys are server-only. Pangram and Copyleaks now have production adapters, normalized sentence evidence, conservative non-average fusion, and explicit partial/disagreement states. Keep `DETECTOR_MODE=mock` until both providers are configured and their data-processing terms are acknowledged; then follow `docs/PROVIDER_SETUP.md`. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative.
+Provider keys are server-only. Detection has one active adapter boundary: deterministic Mock Pangram or real Pangram. The current official Pangram REST contract creates an async task with `POST /task` and polls `GET /task/{task_id}`; the older synchronous `/v3` URL is deprecated. Keep `DETECTOR_MODE=mock` until Pangram credentials, cost controls, and data-processing terms are approved; then follow `docs/PROVIDER_SETUP.md`. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative.
 
 ## Deployment
 
@@ -34,6 +34,6 @@ Provider keys are server-only. Pangram and Copyleaks now have production adapter
 - Backend: Railway from the root `Dockerfile` and `railway.json`, with managed PostgreSQL, Redis, and an attached `/data` volume.
 - Database/queue/object storage: local Docker Compose for development; managed PostgreSQL, Redis, and S3-compatible storage for public rollout.
 
-This deployment remains private to the configured owner. DeepSeek rewrite is enabled, while real detector providers, public registration, payments, and student rollout remain disabled until their separate evaluation and compliance gates are complete.
+This deployment remains private to the configured owner. DeepSeek rewrite is enabled, while real Pangram detection, public registration, payments, and student rollout remain disabled until their separate evaluation and compliance gates are complete.
 
 See `docs/ARCHITECTURE.md`, `benchmark/README.md`, `docs/DEPLOYMENT.md`, `docs/REMOTE_HANDOFF.md`, `docs/SECURITY.md`, and `docs/PROVIDER_SETUP.md`.

@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 from docx import Document as WordDocument
 
 from services.api.app.documents import DOCX_MIME, validate_docx_upload
+from services.api.app.database import session_scope
+from services.api.app.models import AnalysisRun
+from services.api.app.service import new_id
 from services.api.app.text import assert_protected_equal
 
 
@@ -28,8 +31,11 @@ def test_owner_only_mock_workflow(client: TestClient, headers: dict[str, str], c
     assert analysis.status_code == 201, analysis.text
     result = analysis.json()["analysis"]["result"]
     assert result["isMock"] is True
-    assert {row["name"] for row in result["providers"]} == {"Mock Primary", "Mock Review"}
-    assert result["disclaimer"].startswith("This is a probabilistic")
+    assert result["provider"] == "Mock Pangram"
+    assert result["providerModelVersion"] == "mock-pangram-v3"
+    assert result["disclaimer"].startswith("This is a probabilistic AI writing risk signal")
+    assert round(result["aiGeneratedPercent"] + result["aiAssistedPercent"] + result["humanPercent"], 1) == 100.0
+    assert all(row["classification"] in {"ai_generated", "ai_assisted"} for row in result["spans"])
     assert "qualityChecks" not in result
     job = client.get(f"/api/v1/jobs/{analysis.json()['jobId']}/events", headers=headers)
     assert job.status_code == 200
@@ -60,6 +66,12 @@ def test_owner_only_mock_workflow(client: TestClient, headers: dict[str, str], c
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["document"]["currentVersion"]["number"] == 2
     assert accepted.json()["document"]["analysis"]["isStale"] is True
+
+    reanalysis = client.post(f"/api/v1/documents/{document['id']}/analyses", headers=headers)
+    assert reanalysis.status_code == 201, reanalysis.text
+    reanalysis_result = reanalysis.json()["analysis"]["result"]
+    assert reanalysis_result["riskComparison"]["beforePercent"] == result["combinedRiskPercent"]
+    assert reanalysis_result["riskComparison"]["afterPercent"] == reanalysis_result["combinedRiskPercent"]
 
     version_one = next(row for row in accepted.json()["document"]["versions"] if row["number"] == 1)
     restored = client.post(
@@ -92,6 +104,34 @@ def test_stale_manual_save_is_rejected(client: TestClient, headers: dict[str, st
     assert first.status_code == 200
     second = client.patch(f"/api/v1/documents/{document['id']}", headers=headers, json=payload)
     assert second.status_code == 409
+
+
+def test_legacy_analysis_record_remains_read_only_and_unchanged(
+    client: TestClient, headers: dict[str, str], coursework_text: str
+):
+    document = create_document(client, headers, coursework_text)
+    legacy_result = {
+        "estimate": 42.0,
+        "isMock": True,
+        "fusionStatus": "provider-agreement",
+        "providers": [{"name": "Historical Provider"}],
+        "spans": [{"paragraphId": document["currentVersion"]["paragraphs"][0]["id"], "start": 0, "end": 5}],
+        "disclaimer": "Historical probabilistic result.",
+    }
+    with session_scope() as db:
+        db.add(
+            AnalysisRun(
+                id=new_id("analysis"),
+                document_id=document["id"],
+                version_id=document["currentVersion"]["id"],
+                status="completed",
+                provider_mode="legacy-dual",
+                result=legacy_result,
+            )
+        )
+    response = client.get(f"/api/v1/documents/{document['id']}", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["document"]["analysis"]["result"] == legacy_result
 
 
 def test_protected_tokens_cannot_change():

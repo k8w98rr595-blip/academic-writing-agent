@@ -26,7 +26,7 @@ def synthetic_paper() -> str:
         "Introduction\nAcademic writing tools can support revision when they preserve the writer's evidence, uncertainty, and responsibility. This synthetic paper examines a narrow question: how should a university writing assistant improve clarity without pretending to determine authorship? The discussion treats automated scores as indicators rather than verdicts. It also assumes that students remain responsible for checking citations, interpreting feedback, and deciding whether a proposed change represents their intended claim. A useful system therefore combines transparent labels, reversible edits, and limits on what the software may change. These controls matter because a fluent sentence can still be inaccurate, and an attractive score can still encourage misplaced confidence.",
         "A small pilot reviewed 42 records in 2025 and reported a 17.5% revision rate. According to (Lovelace, 1843) and [2], \"Reliable review requires context.\" The public reference was https://example.org/research and the protected names were OpenAI, Cambridge University, Ada Lovelace, UNESCO, and GDPR. These details are synthetic and do not describe real students. They are included to test whether a revision system preserves numbers, quotations, URLs, citation markers, abbreviations, and proper nouns while changing surrounding prose. Any acceptable patch must keep every listed item exactly and must not introduce a new factual claim.",
         "The first design principle is reversibility. A revision assistant should present a proposed change beside the original passage, explain the reason for the change, and wait for the owner to accept or reject it. This arrangement keeps authorship decisions with the user. It also makes errors visible before they enter the current document. Version history provides a second layer of protection because an accepted patch can be inspected against its base version. When the current version changes, older analysis ranges and pending patches should become stale rather than silently attaching themselves to new text.",
-        "The second principle is honest uncertainty. Pattern detectors do not observe the writing process, so they cannot prove who produced a sentence. They estimate characteristics of text using models, thresholds, and reference data that may change. A responsible interface should identify a demonstration provider, show that its score is probabilistic, and distinguish agreement between providers from a single-provider signal. The interface should also avoid marketing language that promises a particular institutional outcome. In practice, the most useful result is often a set of passages for human review, not a single percentage presented without context.",
+        "The second principle is honest uncertainty. Pattern detectors do not observe the writing process, so they cannot prove who produced a sentence. They estimate characteristics of text using models, thresholds, and reference data that may change. A responsible interface should identify a demonstration provider, show separate AI-generated and AI-assisted risk signals, and preserve the model version behind each result. The interface should also avoid marketing language that promises a particular institutional outcome. In practice, the most useful result is often a set of passages for human review, not a single percentage presented without context.",
         "The third principle is data minimization. Course papers can contain names, research participants, unpublished findings, or confidential placement information. A private prototype should accept only the material needed for the requested operation, avoid placing full papers in logs, and delete documents after a short retention period. Provider calls should have clear boundaries, timeouts, and failure behavior. If a provider rejects a request or returns malformed output, the application should fail closed instead of applying a partial response. Owners also need an immediate delete action that removes versions, jobs, analyses, rewrite sessions, patches, and stored files together.",
         "Operational controls are equally important. A paid model can create unexpected cost when duplicate jobs, rapid retries, or a user interface bug repeats the same request. Idempotency keys should connect an operation to a document version and provider. Retry policies should exclude authentication, balance, validation, and permission errors. A small service can start with conservative daily and weekly warnings, followed by a monthly soft limit that disables optional repeat work. A final hard limit should stop new paid tasks while leaving login, viewing, export, and deletion available to the owner.",
         "Evaluation should test both expected behavior and cleanup. A production exercise can create a synthetic paper, run the labeled demonstration detector, request a real rewrite, accept one patch, and confirm that the previous detector result is stale. It can then run a second analysis, export a Word document in memory, delete the paper, and verify that related job and rewrite identifiers no longer resolve. The exercise should not use a real assignment or preserve the exported file. Repeating this check after meaningful deployment changes gives the owner evidence that the main workflow and its privacy boundary still function.",
@@ -213,17 +213,25 @@ def main() -> int:
         analysis_job_id = analysis_response["jobId"]
         analysis = analysis_response["analysis"]
         detection = analysis["result"]
-        if detection.get("isMock") is not True or not detection.get("providers"):
+        if detection.get("isMock") is not True or detection.get("provider") != "Mock Pangram":
             raise RuntimeError("Detector did not return an explicitly labeled Mock result")
-        if not all(provider.get("isMock") is True for provider in detection["providers"]):
-            raise RuntimeError("A detector provider was not labeled as Mock")
+        percentages = [
+            detection.get("aiGeneratedPercent"),
+            detection.get("aiAssistedPercent"),
+            detection.get("humanPercent"),
+        ]
+        if not all(isinstance(value, (int, float)) for value in percentages) or abs(sum(percentages) - 100) > 2:
+            raise RuntimeError("Mock Pangram did not return a valid three-class distribution")
+        if any(span.get("classification") not in {"ai_generated", "ai_assisted"} for span in detection.get("spans", [])):
+            raise RuntimeError("Mock Pangram returned an invalid highlight classification")
         if "probabilistic" not in detection.get("disclaimer", "").lower():
             raise RuntimeError("Mock detector disclaimer is missing")
         steps["mock_detection"] = {
             "status": "pass",
             "is_mock": True,
-            "provider_count": len(detection["providers"]),
-            "evidence_count": len(detection.get("evidence", [])),
+            "provider": detection["provider"],
+            "marked_span_count": len(detection.get("spans", [])),
+            "combined_risk_percent": detection.get("combinedRiskPercent"),
         }
 
         job_status, _, job_payload = client.request("GET", f"/api/v1/jobs/{analysis_job_id}/events")
@@ -288,7 +296,15 @@ def main() -> int:
         )["analysis"]
         if reanalysis.get("isStale") is not False or reanalysis.get("result", {}).get("isMock") is not True:
             raise RuntimeError("Reanalysis did not produce a fresh Mock result")
-        steps["reanalysis"] = {"status": "pass", "fresh": True, "is_mock": True}
+        comparison = reanalysis["result"].get("riskComparison")
+        if not comparison or comparison.get("beforePercent") != detection.get("combinedRiskPercent"):
+            raise RuntimeError("Reanalysis did not preserve the before/after risk comparison")
+        steps["reanalysis"] = {
+            "status": "pass",
+            "fresh": True,
+            "is_mock": True,
+            "risk_change_percentage_points": comparison["changePercentagePoints"],
+        }
 
         export_status, export_headers, export_payload = client.request(
             "POST", f"/api/v1/documents/{document_id}/exports"

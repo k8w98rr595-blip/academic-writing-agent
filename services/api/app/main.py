@@ -28,6 +28,7 @@ from .schemas import (
 )
 from .security import audit, client_key, create_session, current_owner, login_limiter, token_hash, validate_owner_credentials
 from .service import (
+    add_risk_comparison,
     cleanup_expired_documents,
     create_document_record,
     create_job,
@@ -234,7 +235,12 @@ async def analyze_document(document_id: str, owner: str = Depends(current_owner)
         return {"jobId": job.id, "analysis": document_payload(db, document)["analysis"]}
     db.commit()
     try:
-        result = await run_detection(version.paragraphs, idempotency_key=run.id)
+        result = await run_detection(
+            version.paragraphs,
+            idempotency_key=run.id,
+            analyzed_version_id=version.id,
+        )
+        add_risk_comparison(db, run, result)
         run.status = "completed"
         run.result = result
         run.completed_at = utcnow()

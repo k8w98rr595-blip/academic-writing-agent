@@ -44,7 +44,7 @@ def test_mock_evaluation_is_non_claimable_and_reproducible(tmp_path: Path) -> No
     assert first == second
     assert first["claimStatus"] == "development-only"
     assert first["thresholdRecommendation"]["available"] is False
-    assert first["providerAgreement"][0]["matrix"]["leftPositiveRightNegative"] == 2
+    assert first["providerAgreement"] == []
     assert all(group["suppressed"] for provider in first["providers"] for groups in provider["groups"].values() for group in groups)
     write_report(first, tmp_path)
     assert "NOT VALID FOR PRODUCT CLAIMS" in (tmp_path / "report.html").read_text(encoding="utf-8")
@@ -92,11 +92,9 @@ def test_provider_sentence_ranges_map_back_to_canonical_document() -> None:
     text = "First sentence.\n\nSecond sentence."
     paragraphs, offsets = paragraphs_for("sample1", text)
     result = {
-        "providers": [{
-            "provider": "Pangram", "providerModelVersion": "v1", "overallScore": 60,
-            "sentenceSpans": [{"paragraphId": paragraphs[1]["id"], "start": 0, "end": 16, "score": 0.8}],
-            "isMock": False, "latencyMs": 12, "status": "success", "error": None,
-        }]
+        "provider": "Pangram", "providerModelVersion": "v1", "combinedRiskPercent": 60,
+        "spans": [{"paragraphId": paragraphs[1]["id"], "start": 0, "end": 16, "score": 0.8}],
+        "isMock": False, "latencyMs": 12, "status": "success", "error": None,
     }
     rows = prediction_rows(
         result, dataset_version="1.0.0", run_id="run", sample_id="sample1", offsets=offsets,
