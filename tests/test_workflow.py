@@ -57,15 +57,46 @@ def test_owner_only_mock_workflow(client: TestClient, headers: dict[str, str], c
     patch = patch_response.json()["patch"]
     assert patch["isMock"] is True
     assert patch["originalText"] != patch["revisedText"]
+    assert patch["rewriteSessionId"] == rewrite.json()["rewriteSession"]["id"]
+    assert patch["revisionNumber"] == 1
+    assert patch["contextScope"] == "selection"
+
+    refined_response = client.post(
+        f"/api/v1/rewrite-sessions/{rewrite.json()['rewriteSession']['id']}/messages",
+        headers=headers,
+        json={
+            "instruction": "Make the current suggestion more concise",
+            "paragraph_id": paragraph["id"],
+            "selected_text": "",
+            "previous_patch_id": patch["id"],
+            "context_scope": "section",
+        },
+    )
+    assert refined_response.status_code == 201, refined_response.text
+    refined = refined_response.json()["patch"]
+    assert refined["revisionNumber"] == 2
+    assert refined["supersedesPatchId"] == patch["id"]
+    assert refined["originalText"] == patch["originalText"]
+    assert refined["revisedText"] != patch["revisedText"]
+    refreshed = client.get(f"/api/v1/documents/{document['id']}", headers=headers).json()["document"]
+    patch_states = {item["id"]: item["status"] for item in refreshed["patches"]}
+    assert patch_states[patch["id"]] == "superseded"
+    assert patch_states[refined["id"]] == "pending"
+    assert next(item for item in refreshed["patches"] if item["id"] == refined["id"])["revisionNumber"] == 2
 
     accepted = client.post(
-        f"/api/v1/patches/{patch['id']}/accept",
+        f"/api/v1/patches/{refined['id']}/accept",
         headers=headers,
-        json={"expected_base_version_id": patch["baseVersionId"]},
+        json={"expected_base_version_id": refined["baseVersionId"]},
     )
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["document"]["currentVersion"]["number"] == 2
     assert accepted.json()["document"]["analysis"]["isStale"] is True
+    assert client.post(
+        f"/api/v1/patches/{patch['id']}/accept",
+        headers=headers,
+        json={"expected_base_version_id": patch["baseVersionId"]},
+    ).status_code == 409
 
     reanalysis = client.post(f"/api/v1/documents/{document['id']}/analyses", headers=headers)
     assert reanalysis.status_code == 201, reanalysis.text

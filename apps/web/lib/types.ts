@@ -55,12 +55,17 @@ export type Patch = {
   revisedText: string;
   reason: string;
   protectedStatus: string;
-  status: "pending" | "accepted" | "rejected";
+  status: "pending" | "accepted" | "rejected" | "superseded";
   isMock?: boolean;
   provider?: string;
   modelVersion?: string;
   validatorModelVersion?: string | null;
   createdAt?: string;
+  rewriteSessionId?: string;
+  revisionNumber?: number;
+  contextScope?: "selection" | "paragraph" | "section" | "document";
+  contextCharacters?: number;
+  supersedesPatchId?: string | null;
 };
 
 export type VersionSummary = {

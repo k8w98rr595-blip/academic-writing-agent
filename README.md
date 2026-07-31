@@ -2,6 +2,8 @@
 
 Paperlight is an owner-only workspace focused on AI writing-risk detection and author-controlled revision of English undergraduate coursework while preserving citations, numbers, quotations, and author control. It provides a patch-based writing Agent, editable AI-risk evidence, immutable versions, Word import/export, and seven-day deletion. Plagiarism/similarity checking is intentionally outside the product scope.
 
+The writing Agent is a multi-turn, author-reviewed workflow. The owner selects a risky passage, states a writing-quality goal, reviews the proposed patch, and may ask the same rewrite session for another revision before accepting or rejecting it. Follow-up revisions keep the original passage as an immutable safety anchor. Context is derived by the server from the selected immutable document version; full-document context requires an explicit confirmation. The Agent never auto-applies a patch, auto-runs detection, or optimizes against a detector score.
+
 The default providers are deterministic mocks for product testing. Mock results are always labeled as demonstrations and are not Turnitin results or proof of authorship.
 
 ## Local development

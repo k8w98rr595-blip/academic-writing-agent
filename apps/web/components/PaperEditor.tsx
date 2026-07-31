@@ -47,6 +47,20 @@ export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur
             aria-label={isHeading ? `Heading ${index + 1}` : `Paragraph ${index + 1}`}
             onInput={onDirty}
             onBlur={(event: FocusEvent<HTMLElement>) => onParagraphBlur(paragraph.id, event.currentTarget.innerText.trim())}
+            onPointerDownCapture={(event) => {
+              const evidence = (event.target as HTMLElement).closest("mark.evidence");
+              if (!evidence || !event.currentTarget.contains(evidence)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onRiskSpan({ paragraphId: paragraph.id, text: evidence.textContent?.trim() || "" });
+            }}
+            onClickCapture={(event) => {
+              const evidence = (event.target as HTMLElement).closest("mark.evidence");
+              if (!evidence || !event.currentTarget.contains(evidence)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onRiskSpan({ paragraphId: paragraph.id, text: evidence.textContent?.trim() || "" });
+            }}
             onMouseUp={captureSelection}
             onKeyUp={captureSelection}
             onPaste={pastePlain}
@@ -57,7 +71,7 @@ export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur
               role="button"
               tabIndex={0}
               title="发送到写作助手审阅"
-              onClick={(event) => { event.stopPropagation(); onRiskSpan({ paragraphId: paragraph.id, text: chunk.text }); }}
+              onClick={(event) => event.stopPropagation()}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();

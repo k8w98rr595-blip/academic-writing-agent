@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlignLeft, Bold, ChevronDown, Download, FileClock, FileText, History, Italic, ListTree, LogOut, Plus, Redo2, Save, ShieldCheck, Sparkles, Trash2, Undo2 } from "lucide-react";
 import { api, downloadExport } from "@/lib/api";
+import { buildRewriteMessage, type AgentContextScope } from "@/lib/agent";
 import type { DocumentListItem, EvidenceSpan, PaperDocument, Paragraph, Patch, VersionSummary } from "@/lib/types";
 import { Inspector, type InspectorTab } from "./Inspector";
 import { PaperEditor } from "./PaperEditor";
@@ -29,8 +30,10 @@ export function Workspace(props: Props) {
   const [tab, setTab] = useState<InspectorTab>(document.analysis ? "detection" : "agent");
   const [selection, setSelection] = useState({ paragraphId: paragraphs[0]?.id || "", text: "" });
   const [instruction, setInstruction] = useState("Make this passage more specific, strengthen its reasoning, and connect evidence to the claim without changing its meaning.");
-  const [rewriteSessionId, setRewriteSessionId] = useState("");
+  const [rewriteSessionId, setRewriteSessionId] = useState(() => document.patches.find((patch) => patch.status === "pending")?.rewriteSessionId || "");
   const [pendingPatch, setPendingPatch] = useState<Patch | null>(() => document.patches.find((patch) => patch.status === "pending") || null);
+  const [contextScope, setContextScope] = useState<AgentContextScope>("selection");
+  const [fullDocumentConfirmed, setFullDocumentConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -45,8 +48,11 @@ export function Workspace(props: Props) {
     setParagraphs(document.currentVersion.paragraphs);
     setDirty(false);
     setSelection({ paragraphId: document.currentVersion.paragraphs[0]?.id || "", text: "" });
-    setRewriteSessionId("");
-    setPendingPatch(document.patches.find((patch) => patch.status === "pending") || null);
+    const currentPendingPatch = document.patches.find((patch) => patch.status === "pending") || null;
+    setRewriteSessionId(currentPendingPatch?.rewriteSessionId || "");
+    setPendingPatch(currentPendingPatch);
+    setContextScope("selection");
+    setFullDocumentConfirmed(false);
     setConfirmation(null);
   }, [document.id, document.currentVersion.id]);
 
@@ -70,6 +76,11 @@ export function Workspace(props: Props) {
     setSelection(nextSelection);
     setTab("agent");
     setInspectorCollapsed(false);
+  }
+
+  function changeContextScope(nextScope: AgentContextScope) {
+    setContextScope(nextScope);
+    if (nextScope !== "document") setFullDocumentConfirmed(false);
   }
 
   async function saveDraft(): Promise<PaperDocument> {
@@ -114,15 +125,21 @@ export function Workspace(props: Props) {
     setMessage("");
     try {
       const current = await saveDraft();
-      let sessionId = rewriteSessionId;
+      let sessionId = pendingPatch?.rewriteSessionId || rewriteSessionId;
       if (!sessionId) {
         const created = await api<{ rewriteSession: { id: string } }>(`/api/v1/documents/${current.id}/rewrite-sessions`, { method: "POST", body: JSON.stringify({ version_id: current.currentVersion.id }) });
         sessionId = created.rewriteSession.id;
         setRewriteSessionId(sessionId);
       }
-      const paragraphId = selection.paragraphId || current.currentVersion.paragraphs[0].id;
-      const response = await api<{ patch: Patch }>(`/api/v1/rewrite-sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify({ instruction, paragraph_id: paragraphId, selected_text: selection.text }) });
+      const safeSelection = {
+        paragraphId: selection.paragraphId || current.currentVersion.paragraphs[0].id,
+        text: selection.text,
+      };
+      const body = buildRewriteMessage({ instruction, selection: safeSelection, pendingPatch, contextScope, fullDocumentConfirmed });
+      const response = await api<{ patch: Patch }>(`/api/v1/rewrite-sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify(body) });
       setPendingPatch(response.patch);
+      setRewriteSessionId(response.patch.rewriteSessionId || sessionId);
+      setMessage(`Agent 建议版本 ${response.patch.revisionNumber || 1} 已生成，等待你审阅。`);
       setTab("agent");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Unable to prepare patch");
@@ -139,6 +156,8 @@ export function Workspace(props: Props) {
       setParagraphs(response.document.currentVersion.paragraphs);
       setPendingPatch(null);
       setRewriteSessionId("");
+      setContextScope("selection");
+      setFullDocumentConfirmed(false);
       setMessage("Patch accepted as a new version; detection is now stale.");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Unable to accept patch");
@@ -150,6 +169,8 @@ export function Workspace(props: Props) {
     try {
       await api(`/api/v1/patches/${patch.id}/reject`, { method: "POST", body: JSON.stringify({ expected_base_version_id: patch.baseVersionId }) });
       setPendingPatch(null);
+      setContextScope("selection");
+      setFullDocumentConfirmed(false);
       setMessage("Patch rejected; the document was not changed.");
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : "Unable to reject patch"); }
     finally { setBusy(false); }
@@ -218,7 +239,7 @@ export function Workspace(props: Props) {
             <footer className="editor-status"><span>英文课程论文</span><span>{stale ? "检测结果需要刷新" : "检测结果与当前版本一致"}</span></footer>
           </section>
 
-          <Inspector tab={tab} collapsed={inspectorCollapsed} onToggleCollapsed={() => setInspectorCollapsed((value) => !value)} document={document} selectedText={selection.text} pendingPatch={pendingPatch} instruction={instruction} busy={busy} onTab={openInspector} onInstruction={setInstruction} onAnalyze={() => void analyze()} onPropose={() => void propose()} onAccept={(patch) => void accept(patch)} onReject={(patch) => void reject(patch)} onRestore={restore} />
+          <Inspector tab={tab} collapsed={inspectorCollapsed} onToggleCollapsed={() => setInspectorCollapsed((value) => !value)} document={document} selectedText={selection.text} pendingPatch={pendingPatch} instruction={instruction} contextScope={contextScope} fullDocumentConfirmed={fullDocumentConfirmed} busy={busy} onTab={openInspector} onInstruction={setInstruction} onContextScope={changeContextScope} onFullDocumentConfirmed={setFullDocumentConfirmed} onAnalyze={() => void analyze()} onPropose={() => void propose()} onAccept={(patch) => void accept(patch)} onReject={(patch) => void reject(patch)} onRestore={restore} />
         </div>
       </section>
     </main>

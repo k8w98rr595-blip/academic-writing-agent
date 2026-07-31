@@ -229,6 +229,19 @@ mark.evidence:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 .selection-preview p { display: -webkit-box; margin: 7px 0 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 5; color: #344052; font-family: "Source Serif 4", Georgia, serif; font-size: 11px; line-height: 1.55; }
 .agent-compose textarea { min-height: 116px; resize: vertical; padding: 12px; border: 1px solid var(--line-strong); border-radius: 2px; color: var(--ink); font-size: 11px; line-height: 1.6; }
 .agent-compose .button { margin-top: 16px; }
+.agent-context { display: grid; gap: 7px; margin: 0 0 16px; padding: 12px; border: 1px solid var(--line); background: #f8f7f3; }
+.agent-context > label:first-child { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; color: var(--ink); font-size: 10px; font-weight: 750; }
+.agent-context select { min-width: 0; padding: 8px 30px 8px 9px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font-size: 10px; }
+.agent-context small { color: var(--muted); font-size: 8px; line-height: 1.5; }
+.context-confirm { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: #6d4c15; font-size: 9px; line-height: 1.5; }
+.context-confirm input { margin-top: 2px; }
+.agent-refine { display: grid; gap: 10px; margin-top: 16px; padding: 14px; border: 1px solid #b8c9e7; background: #f5f8fd; }
+.agent-refine h3 { margin: 0; color: var(--ink); font-size: 11px; }
+.agent-refine > p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.agent-refine .agent-context { margin: 0; background: var(--paper); }
+.agent-refine > label { display: grid; gap: 7px; color: var(--ink); font-size: 10px; font-weight: 750; }
+.agent-refine textarea { min-height: 88px; resize: vertical; padding: 10px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font-size: 10px; line-height: 1.55; }
+.agent-refine .button { margin: 0; }
 .patch-title { margin-bottom: 18px; }
 .patch-title h2 { margin: 5px 0 4px; }
 .patch-title p { margin: 0; color: var(--muted); font-size: 9px; }

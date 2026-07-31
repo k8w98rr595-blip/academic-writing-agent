@@ -2,6 +2,8 @@
 
 The owner-only release is deployed from `main`. It is scoped to AI writing-risk detection and author-controlled revision; plagiarism/similarity checking is intentionally excluded. It uses DeepSeek V4 Pro for rewrite proposals and V4 Flash for semantic-safety validation; detection remains explicitly labeled Mock until the detector benchmark and provider gates are complete.
 
+The current writing flow is a multi-turn Agent patch review: select a passage, request a structured proposal, optionally refine that proposal in the same session, then explicitly accept or reject it. The original passage stays immutable across revisions; context is reconstructed server-side, full-document context requires explicit confirmation, and neither patch application nor re-detection is automatic.
+
 ## Live services
 
 - Frontend: <https://k8w98rr595-blip.github.io/academic-writing-agent/>
@@ -20,7 +22,7 @@ The following checks have passed:
 - The credential-free production smoke workflow verifies Mock detector mode, DeepSeek rewrite mode, configured owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
 - The final 2026-07-15 owner flow completed against the hardened deployment with a 1,127-word synthetic paper: fresh login, labeled Mock analysis, fail-closed URL protection, real DeepSeek V4 patch, V4 Flash semantic validation, patch acceptance, stale-result transition, fresh reanalysis, valid DOCX export, immediate document-tree deletion, empty-workspace verification, and logout.
 - The DeepSeek native low-balance warning is enabled at CNY 10. The post-test dashboard showed CNY 19.83 balance and CNY 0.16 cumulative spend; no recharge, purchase, payment change, or plan upgrade was made.
-- Current local verification covers 74 backend/security/provider/workflow tests, 2 frontend unit tests, 4 release-audit tests, type checking, the static Pages build, expanded static secret scanning, and a browser-run desktop/mobile Mock closure check.
+- Current local verification covers 75 backend/security/provider/workflow tests, 4 frontend unit tests, 4 release-audit tests, type checking, the static Pages build, expanded static secret scanning, and a browser-run desktop/mobile Mock closure check. The 2026-07-31 closure additionally verified two successive Agent proposals in one rewrite session, immutable-source protection, explicit full-document confirmation, patch acceptance, immediate stale evidence, re-analysis, before/after risk display, cleanup, and logout without any paid provider call.
 
 ## Production configuration
 

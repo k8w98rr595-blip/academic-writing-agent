@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
@@ -52,6 +52,7 @@ async def lifespan(_: FastAPI):
 
 
 settings = get_settings()
+MAX_AGENT_CONTEXT_CHARACTERS = 60_000
 app = FastAPI(title="Paperlight API", version="0.1.0", lifespan=lifespan, docs_url=None if settings.is_production else "/api/docs")
 app.add_middleware(
     CORSMiddleware,
@@ -98,6 +99,43 @@ def health() -> dict:
         "service": "paperlight-api",
         "providerMode": {"detector": settings.detector_mode, "rewrite": settings.rewrite_mode},
     }
+
+
+def _looks_like_heading(text: str) -> bool:
+    stripped = text.strip()
+    return bool(stripped) and len(stripped) < 80 and not re.search(r"[.!?]$", stripped)
+
+
+def _agent_context(paragraphs: list[dict], paragraph_id: str, scope: str, confirmed: bool) -> str:
+    index = next((position for position, item in enumerate(paragraphs) if item["id"] == paragraph_id), None)
+    if index is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paragraph not found")
+    if scope in {"selection", "paragraph"}:
+        selected = [paragraphs[index]]
+    elif scope == "section":
+        start = index
+        while start > 0 and not _looks_like_heading(paragraphs[start]["text"]):
+            start -= 1
+        if not _looks_like_heading(paragraphs[start]["text"]):
+            start = index
+        end = start + 1
+        while end < len(paragraphs) and not _looks_like_heading(paragraphs[end]["text"]):
+            end += 1
+        selected = paragraphs[start:end]
+    else:
+        if not confirmed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Full-document context requires explicit confirmation",
+            )
+        selected = paragraphs
+    context = "\n\n".join(item["text"] for item in selected)
+    if len(context) > MAX_AGENT_CONTEXT_CHARACTERS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Requested Agent context is too large",
+        )
+    return context
 
 
 @app.get("/api/v1/auth/status")
@@ -284,7 +322,10 @@ async def rewrite_message(
     owner: str = Depends(current_owner),
     db: Session = Depends(get_db),
 ):
-    rewrite = db.scalar(select(RewriteSession).where(RewriteSession.id == session_id))
+    # Serialize proposals within one rewrite session so concurrent clicks cannot
+    # create two independently pending successors. SQLite ignores this clause;
+    # PostgreSQL enforces it in production.
+    rewrite = db.scalar(select(RewriteSession).where(RewriteSession.id == session_id).with_for_update())
     if not rewrite:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rewrite session not found")
     document = get_owned_document(db, owner, rewrite.document_id)
@@ -296,9 +337,58 @@ async def rewrite_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paragraph not found")
     if payload.selected_text and paragraph["text"].count(payload.selected_text) != 1:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Selected text must occur exactly once")
-    proposal = await propose_rewrite(payload.instruction, payload.paragraph_id, paragraph["text"], payload.selected_text)
-    if proposal["revisedText"] == proposal["originalText"]:
+    previous_patch = None
+    if payload.previous_patch_id:
+        previous_patch = db.scalar(
+            select(PatchRecord).where(
+                PatchRecord.id == payload.previous_patch_id,
+                PatchRecord.rewrite_session_id == rewrite.id,
+            )
+        )
+        if not previous_patch:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Previous patch not found")
+        if (
+            previous_patch.status != "pending"
+            or previous_patch.base_version_id != version.id
+            or previous_patch.paragraph_id != payload.paragraph_id
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Previous patch cannot be refined")
+        if paragraph["text"].count(previous_patch.original_text) != 1:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Previous patch no longer matches the document")
+    else:
+        existing_pending = db.scalar(
+            select(PatchRecord).where(
+                PatchRecord.rewrite_session_id == rewrite.id,
+                PatchRecord.status == "pending",
+            )
+        )
+        if existing_pending:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Review or refine the pending patch before creating another",
+            )
+
+    context_text = _agent_context(
+        version.paragraphs,
+        payload.paragraph_id,
+        payload.context_scope,
+        payload.confirm_full_document_context,
+    )
+    current_candidate = previous_patch.revised_text if previous_patch else ""
+    proposal = await propose_rewrite(
+        payload.instruction,
+        payload.paragraph_id,
+        paragraph["text"],
+        "" if previous_patch else payload.selected_text,
+        anchor_text=previous_patch.original_text if previous_patch else "",
+        current_candidate=current_candidate,
+        context_text=context_text,
+    )
+    if proposal["revisedText"] == (current_candidate or proposal["originalText"]):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="No safe automatic change was found for this passage")
+    revision_number = int(
+        db.scalar(select(func.count(PatchRecord.id)).where(PatchRecord.rewrite_session_id == rewrite.id)) or 0
+    ) + 1
     patch = PatchRecord(
         id=new_id("patch"),
         rewrite_session_id=rewrite.id,
@@ -310,6 +400,9 @@ async def rewrite_message(
         reason=proposal["reason"],
         protected_status=proposal["protectedStatus"],
     )
+    if previous_patch:
+        previous_patch.status = "superseded"
+        previous_patch.decided_at = utcnow()
     db.add(patch)
     audit(
         db,
@@ -337,6 +430,11 @@ async def rewrite_message(
             "provider": proposal["provider"],
             "modelVersion": proposal["modelVersion"],
             "validatorModelVersion": proposal["validatorModelVersion"],
+            "rewriteSessionId": rewrite.id,
+            "revisionNumber": revision_number,
+            "contextScope": payload.context_scope,
+            "contextCharacters": len(context_text),
+            "supersedesPatchId": previous_patch.id if previous_patch else None,
         }
     }
 
@@ -365,6 +463,19 @@ def accept_patch(
     create_version(db, document, paragraphs, count, "agent-patch")
     patch.status = "accepted"
     patch.decided_at = utcnow()
+    other_pending = list(
+        db.scalars(
+            select(PatchRecord).where(
+                PatchRecord.document_id == document.id,
+                PatchRecord.base_version_id == patch.base_version_id,
+                PatchRecord.status == "pending",
+                PatchRecord.id != patch.id,
+            )
+        )
+    )
+    for other in other_pending:
+        other.status = "superseded"
+        other.decided_at = utcnow()
     audit(db, owner, "patch.accepted", document.id, patchId=patch.id)
     db.commit()
     return {"document": document_payload(db, document)}

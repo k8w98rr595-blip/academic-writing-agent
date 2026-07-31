@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, ChevronLeft, ChevronRight, Clock3, FileCheck2, RotateCcw, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AGENT_CONTEXT_OPTIONS, type AgentContextScope } from "@/lib/agent";
 import type { LegacyDetectionResult, PangramDetectionResult, PaperDocument, Patch, VersionSummary } from "@/lib/types";
 
 export type InspectorTab = "agent" | "detection" | "versions";
@@ -12,10 +13,14 @@ type Props = {
   selectedText: string;
   pendingPatch: Patch | null;
   instruction: string;
+  contextScope: AgentContextScope;
+  fullDocumentConfirmed: boolean;
   busy: boolean;
   onToggleCollapsed: () => void;
   onTab: (tab: InspectorTab) => void;
   onInstruction: (value: string) => void;
+  onContextScope: (value: AgentContextScope) => void;
+  onFullDocumentConfirmed: (value: boolean) => void;
   onAnalyze: () => void;
   onPropose: () => void;
   onAccept: (patch: Patch) => void;
@@ -81,8 +86,14 @@ function DetectionPanel({ document, busy, onAnalyze, onTab }: Pick<Props, "docum
   return <CurrentDetectionPanel result={result} stale={Boolean(analysis?.isStale)} busy={busy} onAnalyze={onAnalyze} onTab={onTab} />;
 }
 
-function AgentPanel(props: Pick<Props, "selectedText" | "pendingPatch" | "instruction" | "busy" | "onInstruction" | "onPropose" | "onAccept" | "onReject">) {
-  const { selectedText, pendingPatch, instruction, busy, onInstruction, onPropose, onAccept, onReject } = props;
+function AgentContextControls(props: Pick<Props, "contextScope" | "fullDocumentConfirmed" | "onContextScope" | "onFullDocumentConfirmed">) {
+  const active = AGENT_CONTEXT_OPTIONS.find((option) => option.value === props.contextScope)!;
+  return <div className="agent-context"><label htmlFor="agent-context-scope">上下文范围<select id="agent-context-scope" value={props.contextScope} onChange={(event) => props.onContextScope(event.target.value as AgentContextScope)}>{AGENT_CONTEXT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><small>{active.description}</small>{props.contextScope === "document" ? <label className="context-confirm"><input type="checkbox" checked={props.fullDocumentConfirmed} onChange={(event) => props.onFullDocumentConfirmed(event.target.checked)} /><span>我确认将整篇文稿作为本轮参考上下文发送给 DeepSeek。Agent 仍只修改当前目标片段。</span></label> : null}</div>;
+}
+
+function AgentPanel(props: Pick<Props, "selectedText" | "pendingPatch" | "instruction" | "contextScope" | "fullDocumentConfirmed" | "busy" | "onInstruction" | "onContextScope" | "onFullDocumentConfirmed" | "onPropose" | "onAccept" | "onReject">) {
+  const { selectedText, pendingPatch, instruction, contextScope, fullDocumentConfirmed, busy, onInstruction, onPropose, onAccept, onReject } = props;
+  const contextBlocked = contextScope === "document" && !fullDocumentConfirmed;
   if (pendingPatch) {
     const providerLabel = pendingPatch.isMock
       ? "Mock Agent，接受前请人工审阅"
@@ -90,9 +101,9 @@ function AgentPanel(props: Pick<Props, "selectedText" | "pendingPatch" | "instru
     const validatorLabel = pendingPatch.validatorModelVersion
       ? `${pendingPatch.validatorModelVersion} 已完成语义安全校验`
       : pendingPatch.protectedStatus;
-    return <div className="patch-panel"><div className="patch-title"><div><span className="eyebrow">REVIEWABLE PATCH</span><h2>建议修改</h2><p>{providerLabel}</p></div></div><section className="patch-comparison"><label>原文<blockquote>{pendingPatch.originalText}</blockquote></label><span className="patch-arrow">→</span><label>建议稿<blockquote className="suggested">{pendingPatch.revisedText}</blockquote></label></section><details className="patch-reason"><summary>修改说明</summary><p>{pendingPatch.reason}</p></details><div className="protected-row"><ShieldCheck size={18} /><span>{validatorLabel}</span></div><div className="patch-actions"><button className="button secondary" disabled={busy} onClick={() => onReject(pendingPatch)}><X size={17} />保留原文</button><button className="button primary" disabled={busy || pendingPatch.originalText === pendingPatch.revisedText} onClick={() => onAccept(pendingPatch)}><Check size={17} />接受此修改</button></div></div>;
+    return <div className="patch-panel"><div className="patch-title"><div><span className="eyebrow">REVIEWABLE PATCH</span><h2>建议修改 · 版本 {pendingPatch.revisionNumber || 1}</h2><p>{providerLabel}{pendingPatch.contextCharacters ? ` · 本轮上下文 ${pendingPatch.contextCharacters.toLocaleString()} 字符` : ""}</p></div></div><section className="patch-comparison"><label>原文<blockquote>{pendingPatch.originalText}</blockquote></label><span className="patch-arrow">→</span><label>建议稿<blockquote className="suggested">{pendingPatch.revisedText}</blockquote></label></section><details className="patch-reason" open><summary>修改说明</summary><p>{pendingPatch.reason}</p></details><div className="protected-row"><ShieldCheck size={18} /><span>{validatorLabel}</span></div><section className="agent-refine"><h3>继续调整这份建议</h3><p>输入下一轮要求。Agent 会基于当前建议继续修改，但最终补丁仍以原文为锚点。</p><AgentContextControls {...props} /><label>继续修改要求<textarea value={instruction} onChange={(event) => onInstruction(event.target.value)} placeholder="例如：再简洁一点，但保留第一句话和全部专业术语。" /></label><button className="button secondary wide" disabled={busy || contextBlocked || instruction.trim().length < 2} onClick={onPropose}>{busy ? "正在准备下一版..." : "生成下一版建议"}</button></section><div className="patch-actions"><button className="button secondary" disabled={busy} onClick={() => onReject(pendingPatch)}><X size={17} />保留原文</button><button className="button primary" disabled={busy || pendingPatch.originalText === pendingPatch.revisedText} onClick={() => onAccept(pendingPatch)}><Check size={17} />接受此修改</button></div></div>;
   }
-  return <div className="agent-compose"><div className="compose-intro"><Sparkles size={25} /><span className="eyebrow">DEEPSEEK WRITING AGENT</span><h2>由作者控制每一次修改</h2><p>点击蓝色风险片段或在论文中选择文字，再说明你想改进的方向。Agent 只发送所选内容和必要段落上下文，目标是提高具体性、论证质量、作者表达和证据结合度；它只会提出可撤销补丁。</p></div><div className="selection-preview"><strong>当前选中内容</strong><p>{selectedText || "尚未选择文本，将审阅当前活动段落。"}</p></div><label>修改要求<textarea value={instruction} onChange={(event) => onInstruction(event.target.value)} placeholder="例如：让论证更具体，并说明证据如何支持主张，但不要改变原意。" /></label><button className="button primary wide" disabled={busy || instruction.trim().length < 2} onClick={onPropose}>{busy ? "正在准备补丁..." : "生成可审阅补丁"}</button></div>;
+  return <div className="agent-compose"><div className="compose-intro"><Sparkles size={25} /><span className="eyebrow">DEEPSEEK WRITING AGENT</span><h2>由作者控制每一次修改</h2><p>点击蓝色风险片段或在论文中选择文字，再说明你想改进的方向。Agent 只提出可撤销补丁，不会自动应用修改、自动复检或根据检测分数循环改写。</p></div><div className="selection-preview"><strong>当前选中内容</strong><p>{selectedText || "尚未选择文本，将审阅当前活动段落。"}</p></div><AgentContextControls {...props} /><label>修改要求<textarea value={instruction} onChange={(event) => onInstruction(event.target.value)} placeholder="例如：让论证更具体，并说明证据如何支持主张，但不要改变原意。" /></label><button className="button primary wide" disabled={busy || contextBlocked || instruction.trim().length < 2} onClick={onPropose}>{busy ? "正在准备补丁..." : "生成可审阅补丁"}</button></div>;
 }
 
 function VersionsPanel({ document, busy, onRestore }: Pick<Props, "document" | "busy" | "onRestore">) {

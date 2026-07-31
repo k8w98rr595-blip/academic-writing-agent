@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import zipfile
 
 import httpx
@@ -129,6 +130,8 @@ def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.
             "Make the claim more direct without changing evidence.",
             "p_deepseek",
             "It is important to note that NASA measured a rate of 42% [3].",
+            current_candidate="The evidence indicates that NASA measured a rate of 42% [3].",
+            context_text="Methods\n\nNASA measured the rate under controlled conditions.",
         )
     )
 
@@ -143,6 +146,9 @@ def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.
     assert calls[0]["payload"]["thinking"] == {"type": "enabled"}
     assert calls[0]["payload"]["reasoning_effort"] == "high"
     assert calls[0]["payload"]["response_format"] == {"type": "json_object"}
+    user_payload = json.loads(calls[0]["payload"]["messages"][1]["content"])
+    assert user_payload["currentCandidate"].startswith("The evidence indicates")
+    assert user_payload["contextText"].startswith("Methods")
     assert calls[1]["payload"]["model"] == "deepseek-v4-flash"
     assert calls[1]["payload"]["thinking"] == {"type": "disabled"}
     assert "reasoning_effort" not in calls[1]["payload"]
@@ -320,6 +326,80 @@ def test_prompt_injection_is_treated_as_instruction_text(
     assert patch["isMock"] is True
     assert "key" not in patch["revisedText"].lower()
     assert "tool" not in patch["revisedText"].lower()
+
+
+def test_agent_context_and_refinement_are_server_controlled(
+    client: TestClient, headers: dict[str, str], coursework_text: str
+):
+    document = create_document(client, headers, coursework_text)
+    paragraph = document["currentVersion"]["paragraphs"][1]
+    first_session = client.post(
+        f"/api/v1/documents/{document['id']}/rewrite-sessions",
+        headers=headers,
+        json={"version_id": document["currentVersion"]["id"]},
+    ).json()["rewriteSession"]
+    second_session = client.post(
+        f"/api/v1/documents/{document['id']}/rewrite-sessions",
+        headers=headers,
+        json={"version_id": document["currentVersion"]["id"]},
+    ).json()["rewriteSession"]
+
+    missing_confirmation = client.post(
+        f"/api/v1/rewrite-sessions/{first_session['id']}/messages",
+        headers=headers,
+        json={
+            "instruction": "Improve clarity",
+            "paragraph_id": paragraph["id"],
+            "selected_text": "",
+            "context_scope": "document",
+        },
+    )
+    assert missing_confirmation.status_code == 422
+    assert missing_confirmation.json()["detail"] == "Full-document context requires explicit confirmation"
+
+    first = client.post(
+        f"/api/v1/rewrite-sessions/{first_session['id']}/messages",
+        headers=headers,
+        json={
+            "instruction": "Improve clarity",
+            "paragraph_id": paragraph["id"],
+            "selected_text": "",
+            "context_scope": "paragraph",
+        },
+    )
+    assert first.status_code == 201, first.text
+    patch = first.json()["patch"]
+
+    duplicate = client.post(
+        f"/api/v1/rewrite-sessions/{first_session['id']}/messages",
+        headers=headers,
+        json={"instruction": "Try again", "paragraph_id": paragraph["id"], "selected_text": ""},
+    )
+    assert duplicate.status_code == 409
+
+    cross_session = client.post(
+        f"/api/v1/rewrite-sessions/{second_session['id']}/messages",
+        headers=headers,
+        json={
+            "instruction": "Refine an unrelated patch",
+            "paragraph_id": paragraph["id"],
+            "selected_text": "",
+            "previous_patch_id": patch["id"],
+        },
+    )
+    assert cross_session.status_code == 404
+
+    unexpected = client.post(
+        f"/api/v1/rewrite-sessions/{second_session['id']}/messages",
+        headers=headers,
+        json={
+            "instruction": "Improve clarity",
+            "paragraph_id": paragraph["id"],
+            "selected_text": "",
+            "hidden_tool": "run",
+        },
+    )
+    assert unexpected.status_code == 422
 
 
 def test_session_logout_revokes_bearer_token(client: TestClient, token: str):

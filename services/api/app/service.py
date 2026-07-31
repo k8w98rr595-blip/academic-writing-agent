@@ -74,6 +74,11 @@ def document_payload(db: Session, document: Document) -> dict:
             .limit(30)
         )
     )
+    revision_numbers: dict[str, int] = {}
+    patch_revision: dict[str, int] = {}
+    for patch in sorted(patches, key=lambda item: (item.created_at, item.id)):
+        revision_numbers[patch.rewrite_session_id] = revision_numbers.get(patch.rewrite_session_id, 0) + 1
+        patch_revision[patch.id] = revision_numbers[patch.rewrite_session_id]
     return {
         "id": document.id,
         "title": document.title,
@@ -120,6 +125,8 @@ def document_payload(db: Session, document: Document) -> dict:
                 "protectedStatus": patch.protected_status,
                 "status": patch.status,
                 "createdAt": patch.created_at.isoformat(),
+                "rewriteSessionId": patch.rewrite_session_id,
+                "revisionNumber": patch_revision[patch.id],
             }
             for patch in patches
         ],

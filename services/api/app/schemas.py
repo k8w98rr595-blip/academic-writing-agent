@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -32,9 +32,14 @@ class RewriteSessionRequest(BaseModel):
 
 
 class RewriteMessageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     instruction: str = Field(min_length=2, max_length=1200)
     paragraph_id: str = Field(min_length=3, max_length=64)
     selected_text: str = Field(default="", max_length=10000)
+    previous_patch_id: str | None = Field(default=None, min_length=3, max_length=64)
+    context_scope: Literal["selection", "paragraph", "section", "document"] = "selection"
+    confirm_full_document_context: bool = False
 
     @field_validator("instruction")
     @classmethod

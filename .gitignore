@@ -47,3 +47,4 @@ task_plan.md
 findings.md
 progress.md
 design/qa/
+tests/.runtime/
