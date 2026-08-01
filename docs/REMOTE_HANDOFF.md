@@ -23,6 +23,7 @@ The following checks have passed:
 - The final 2026-07-15 owner flow completed against the hardened deployment with a 1,127-word synthetic paper: fresh login, labeled Mock analysis, fail-closed URL protection, real DeepSeek V4 patch, V4 Flash semantic validation, patch acceptance, stale-result transition, fresh reanalysis, valid DOCX export, immediate document-tree deletion, empty-workspace verification, and logout.
 - The DeepSeek native low-balance warning is enabled at CNY 10. The post-test dashboard showed CNY 19.83 balance and CNY 0.16 cumulative spend; no recharge, purchase, payment change, or plan upgrade was made.
 - Current local verification covers 75 backend/security/provider/workflow tests, 4 frontend unit tests, 4 release-audit tests, type checking, the static Pages build, expanded static secret scanning, and a browser-run desktop/mobile Mock closure check. The 2026-07-31 closure additionally verified two successive Agent proposals in one rewrite session, immutable-source protection, explicit full-document confirmation, patch acceptance, immediate stale evidence, re-analysis, before/after risk display, cleanup, and logout without any paid provider call.
+- The 2026-08-01 production acceptance exercised the released multi-turn flow with real DeepSeek: fail-closed validation, a safe proposal version 1, a successive proposal version 2 anchored to the immutable original, explicit acceptance, stale Mock evidence, re-analysis, `17.6% → 15.9%` demonstration-risk display, desktop/mobile layout, deletion, empty-workspace verification, logout, zero browser warnings/errors, API health 200, unauthenticated 401, exact-origin CORS, and HSTS. The DOCX export control was activated, but the in-app browser did not expose a download event, so that item is recorded as inconclusive rather than passed. See [Production multi-turn Agent acceptance — 2026-08-01](PRODUCTION_ACCEPTANCE_2026-08-01.md).
 
 ## Production configuration
 
@@ -34,7 +35,7 @@ Credential follow-up: the post-logout browser check exposed the saved owner-pass
 
 Local handoff files are ignored and untracked. Their ACL inheritance is disabled and access is restricted to the current user, SYSTEM, and Administrators, but they remain plaintext. Move the values to the owner's password manager, rotate the related credentials, and delete the handoff files only after explicit owner confirmation. Do not copy login or TOTP material into Git, GitHub variables, logs, or documentation.
 
-Operational custody, rotation, TOTP restoration, and provider budget thresholds are defined in [Cost alerts and credential custody runbook](COST_AND_CREDENTIALS_RUNBOOK.md). The reproducible acceptance evidence and current blockers are in [Production acceptance record — 2026-07-15](PRODUCTION_ACCEPTANCE_2026-07-15.md).
+Operational custody, rotation, TOTP restoration, and provider budget thresholds are defined in [Cost alerts and credential custody runbook](COST_AND_CREDENTIALS_RUNBOOK.md). Reproducible acceptance evidence is in [Production acceptance record — 2026-07-15](PRODUCTION_ACCEPTANCE_2026-07-15.md) and [Production multi-turn Agent acceptance — 2026-08-01](PRODUCTION_ACCEPTANCE_2026-08-01.md).
 
 ## Operations
 
