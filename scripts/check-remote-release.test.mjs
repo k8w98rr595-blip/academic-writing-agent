@@ -55,7 +55,7 @@ test("public Pages and hardened Mock backend produce a ready release", async () 
       }),
       "https://paperlight.example.com/api/v1/auth/status": response(200, {
         configured: true,
-        requiresTotp: true,
+        requiresTotp: false,
       }),
       "https://paperlight.example.com/api/v1/documents": response(401),
     }),

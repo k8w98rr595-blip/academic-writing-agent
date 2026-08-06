@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -115,3 +115,32 @@ class AuditEvent(Base):
     resource_id: Mapped[str] = mapped_column(String(64), default="")
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
+class ProviderUsageEvent(Base):
+    """Content-free accounting for outbound provider calls.
+
+    This table deliberately excludes paper text, prompts, provider response bodies,
+    credentials, session tokens, and raw idempotency values.
+    """
+
+    __tablename__ = "provider_usage_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_email: Mapped[str] = mapped_column(String(320), index=True)
+    provider: Mapped[str] = mapped_column(String(64), index=True)
+    operation: Mapped[str] = mapped_column(String(64), index=True)
+    model_version: Mapped[str] = mapped_column(String(128), default="")
+    idempotency_hash: Mapped[str] = mapped_column(String(64), index=True)
+    is_paid: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="reserved", index=True)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    input_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+
+    __table_args__ = (
+        Index("ix_provider_usage_owner_provider_created", "owner_email", "provider", "created_at"),
+    )

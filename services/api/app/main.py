@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import secrets
@@ -16,12 +17,21 @@ from .database import get_db, init_db, session_scope
 from .documents import DOCX_MIME, build_docx, extract_docx_text, validate_docx_upload
 from .models import AnalysisRun, Document, DocumentVersion, JobRecord, PatchRecord, RewriteSession, SessionRecord, utcnow
 from .providers import propose_rewrite, run_detection
+from .provider_usage import (
+    ProviderCallSpec,
+    cancel_unused_reservations,
+    cleanup_provider_usage_events,
+    finalize_provider_call,
+    provider_usage_summary,
+    reserve_provider_calls,
+)
 from .request_limits import RequestBodyLimitMiddleware
 from .schemas import (
     DocumentUpdateRequest,
     LoginRequest,
     LoginResponse,
     PatchDecisionRequest,
+    ProviderUsageSummaryResponse,
     RestoreVersionRequest,
     RewriteMessageRequest,
     RewriteSessionRequest,
@@ -48,6 +58,7 @@ async def lifespan(_: FastAPI):
     init_db()
     with session_scope() as db:
         cleanup_expired_documents(db)
+        cleanup_provider_usage_events(db)
     yield
 
 
@@ -184,6 +195,15 @@ def list_documents(owner: str = Depends(current_owner), db: Session = Depends(ge
     }
 
 
+@app.get("/api/v1/provider-usage/summary", response_model=ProviderUsageSummaryResponse)
+def get_provider_usage_summary(owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+    cleanup_provider_usage_events(db)
+    summary = provider_usage_summary(db, owner)
+    audit(db, owner, "provider.usage_viewed")
+    db.commit()
+    return summary
+
+
 @app.post("/api/v1/documents", status_code=status.HTTP_201_CREATED)
 async def create_document(
     title: str = Form(default="Untitled coursework"),
@@ -258,6 +278,15 @@ def restore_document_version(
 async def analyze_document(document_id: str, owner: str = Depends(current_owner), db: Session = Depends(get_db)):
     document = get_owned_document(db, owner, document_id)
     version = get_version(db, document)
+    operation_seed = f"{document.id}:{version.id}:pangram"
+    usage_reservation_id = ""
+    usage_finalized = False
+    if settings.detector_mode == "pangram":
+        usage_reservation_id = reserve_provider_calls(
+            owner,
+            "Pangram",
+            [ProviderCallSpec("detection", "current", operation_seed)],
+        )["detection"]
     job = create_job(db, owner, document.id, "analysis")
     run = AnalysisRun(id=new_id("analysis"), document_id=document.id, version_id=version.id, status="running", provider_mode=settings.detector_mode)
     db.add(run)
@@ -267,7 +296,7 @@ async def analyze_document(document_id: str, owner: str = Depends(current_owner)
         db.commit()
         from services.worker.celery_app import run_analysis_job
 
-        run_analysis_job.delay(job.id, run.id)
+        run_analysis_job.delay(job.id, run.id, usage_reservation_id)
         audit(db, owner, "analysis.queued", document.id, analysisId=run.id, providerMode=settings.detector_mode)
         db.commit()
         return {"jobId": job.id, "analysis": document_payload(db, document)["analysis"]}
@@ -275,9 +304,23 @@ async def analyze_document(document_id: str, owner: str = Depends(current_owner)
     try:
         result = await run_detection(
             version.paragraphs,
-            idempotency_key=run.id,
+            idempotency_key=operation_seed,
             analyzed_version_id=version.id,
         )
+        if usage_reservation_id:
+            error_code = (result.get("error") or {}).get("code") if isinstance(result.get("error"), dict) else None
+            final_status = "success" if result.get("status") == "success" else (
+                "outcome_unknown" if error_code == "submission_outcome_unknown" else "failed"
+            )
+            finalize_provider_call(
+                usage_reservation_id,
+                final_status=final_status,
+                error_code=error_code,
+                latency_ms=result.get("latencyMs"),
+                input_units=result.get("qualifyingWords"),
+                model_version=result.get("providerModelVersion"),
+            )
+            usage_finalized = True
         add_risk_comparison(db, run, result)
         run.status = "completed"
         run.result = result
@@ -288,12 +331,22 @@ async def analyze_document(document_id: str, owner: str = Depends(current_owner)
         audit(db, owner, "analysis.complete", document.id, analysisId=run.id, providerMode=settings.detector_mode)
         db.commit()
     except HTTPException:
+        if usage_reservation_id and not usage_finalized:
+            cancel_unused_reservations([usage_reservation_id])
         run.status = "failed"
         run.error_code = "PROVIDER_FAILED"
         job.status = "failed"
         job.error_code = "PROVIDER_FAILED"
         job.updated_at = utcnow()
         db.commit()
+        raise
+    except Exception:
+        if usage_reservation_id and not usage_finalized:
+            finalize_provider_call(
+                usage_reservation_id,
+                final_status="outcome_unknown",
+                error_code="application_interrupted",
+            )
         raise
     return {"jobId": job.id, "analysis": document_payload(db, document)["analysis"]}
 
@@ -375,15 +428,46 @@ async def rewrite_message(
         payload.confirm_full_document_context,
     )
     current_candidate = previous_patch.revised_text if previous_patch else ""
-    proposal = await propose_rewrite(
-        payload.instruction,
-        payload.paragraph_id,
-        paragraph["text"],
-        "" if previous_patch else payload.selected_text,
-        anchor_text=previous_patch.original_text if previous_patch else "",
-        current_candidate=current_candidate,
-        context_text=context_text,
-    )
+    instruction_hash = hashlib.sha256(
+        f"{payload.instruction}:{payload.selected_text}:{payload.context_scope}".encode("utf-8")
+    ).hexdigest()
+    operation_seed = f"{rewrite.id}:{version.id}:{payload.paragraph_id}:{previous_patch.id if previous_patch else 'first'}:{instruction_hash}"
+    reservations: dict[str, str] = {}
+    finalized_operations: set[str] = set()
+    if settings.rewrite_mode == "deepseek":
+        reservations = reserve_provider_calls(
+            owner,
+            "DeepSeek",
+            [
+                ProviderCallSpec("rewrite", settings.deepseek_model, f"{operation_seed}:rewrite"),
+                ProviderCallSpec("validation", settings.deepseek_validator_model, f"{operation_seed}:validation"),
+            ],
+        )
+
+    def observe_usage(**observation) -> None:
+        operation = observation.pop("operation")
+        reservation_id = reservations.get(operation)
+        if not reservation_id:
+            return
+        finalize_provider_call(reservation_id, **observation)
+        finalized_operations.add(operation)
+
+    try:
+        proposal = await propose_rewrite(
+            payload.instruction,
+            payload.paragraph_id,
+            paragraph["text"],
+            "" if previous_patch else payload.selected_text,
+            anchor_text=previous_patch.original_text if previous_patch else "",
+            current_candidate=current_candidate,
+            context_text=context_text,
+            idempotency_seed=operation_seed,
+            usage_observer=observe_usage if reservations else None,
+        )
+    finally:
+        cancel_unused_reservations(
+            [reservation_id for operation, reservation_id in reservations.items() if operation not in finalized_operations]
+        )
     if proposal["revisedText"] == (current_candidate or proposal["originalText"]):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="No safe automatic change was found for this passage")
     revision_number = int(

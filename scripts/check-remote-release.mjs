@@ -6,7 +6,7 @@ const DEFAULTS = {
   backendUrl: "",
   expectedDetectorMode: "mock",
   expectedRewriteMode: "mock",
-  expectedRequiresTotp: true,
+  expectedRequiresTotp: false,
   json: false,
 };
 
@@ -260,6 +260,7 @@ function helpText() {
     "  --expected-provider-mode mock     Expected detector and rewrite mode (legacy shorthand)",
     "  --expected-detector-mode mock     Expected detector mode",
     "  --expected-rewrite-mode deepseek  Expected rewrite mode",
+    "  --expected-requires-totp false    Expected owner TOTP requirement",
     "  --json                            Emit JSON",
     "  --help                            Show this help",
   ].join("\n");

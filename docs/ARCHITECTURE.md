@@ -7,6 +7,7 @@ flowchart LR
   U["Owner browser"] -->|"Static assets"| P["GitHub Pages / Next.js export"]
   P -->|"Bearer session + CORS"| A["FastAPI owner API"]
   A --> D[("PostgreSQL / local SQLite")]
+  A --> U[("Content-free Provider usage ledger")]
   A --> O["Object storage adapter"]
   O --> L["Local volume"]
   O --> M["MinIO or S3-compatible storage"]
@@ -31,6 +32,7 @@ flowchart LR
 - 文件：DOCX 经过文件名、MIME、ZIP、展开体积、条目、宏、路径和外部关系检查。
 - 删除：文档树、任务和对象前缀同步清除；排队任务发现记录已删除时自动退出。
 - 日志：不记录论文全文、完整改写稿、Bearer Token 或 Provider Key。
+- 费用保护：真实 DeepSeek/Pangram 调用先预留小时额度；调用记录只保存哈希幂等键、Provider/模型、状态、耗时和供应商返回的计量单位。小时硬限制、重复调用保护和十五分钟故障熔断不会阻止登录、阅读、导出或删除。
 
 ## 当前产品边界
 
@@ -45,7 +47,7 @@ flowchart LR
 
 | 阶段 | 必须增加 | 放行条件 |
 |---|---|---|
-| 单人 Mock | 当前 owner-only、TOTP、Mock 标识、七天删除 | 本地与生产 E2E 通过 |
+| 单人 Mock | 当前 owner-only 密码登录、Mock 标识、七天删除、付费调用保护 | 本地与生产 E2E 通过；不得开放学生账号 |
 | 私测真实 Provider | 真实适配器契约测试、零保留/DPA、成本上限、基准集 | 分组误报和校准指标达标 |
 | 小规模学生试点 | 多租户身份、行级权限、共享限流、队列隔离、备份恢复、投诉与删除工单 | 安全评审、隐私政策和学校规则评审 |
 | 公开发布 | 注册、支付、退款、风控、审计后台、备案/合规、生成内容标识 | 法务、渗透测试、灾备演练和容量测试 |

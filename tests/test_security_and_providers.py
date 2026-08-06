@@ -93,6 +93,7 @@ def test_real_provider_modes_fail_closed_without_credentials(monkeypatch: pytest
 
 def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.MonkeyPatch):
     calls: list[dict] = []
+    observations: list[dict] = []
     responses = [
         {
             "choices": [
@@ -101,7 +102,8 @@ def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.
                         "content": '{"revisedText":"NASA evidence indicates that the measured rate remained 42% [3].","reason":"Made the claim more direct."}'
                     }
                 }
-            ]
+            ],
+            "usage": {"prompt_tokens": 120, "completion_tokens": 40},
         },
         {
             "choices": [
@@ -110,12 +112,13 @@ def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.
                         "content": '{"approved":true,"meaningPreserved":true,"factsAdded":false,"protectedContentPreserved":true,"issues":[]}'
                     }
                 }
-            ]
+            ],
+            "usage": {"prompt_tokens": 80, "completion_tokens": 12},
         },
     ]
 
     async def fake_post(url: str, *, headers: dict, payload: dict, timeout_seconds: int):
-        calls.append({"url": url, "hasBearer": headers.get("Authorization", "").startswith("Bearer "), "payload": payload})
+        calls.append({"url": url, "hasBearer": headers.get("Authorization", "").startswith("Bearer "), "payload": payload, "idempotency": headers.get("Idempotency-Key")})
         return httpx.Response(200, json=responses.pop(0), request=httpx.Request("POST", url))
 
     monkeypatch.setenv("REWRITE_MODE", "deepseek")
@@ -132,6 +135,8 @@ def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.
             "It is important to note that NASA measured a rate of 42% [3].",
             current_candidate="The evidence indicates that NASA measured a rate of 42% [3].",
             context_text="Methods\n\nNASA measured the rate under controlled conditions.",
+            idempotency_seed="stable-synthetic-operation",
+            usage_observer=lambda **observation: observations.append(observation),
         )
     )
 
@@ -152,6 +157,13 @@ def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.
     assert calls[1]["payload"]["model"] == "deepseek-v4-flash"
     assert calls[1]["payload"]["thinking"] == {"type": "disabled"}
     assert "reasoning_effort" not in calls[1]["payload"]
+    assert calls[0]["idempotency"].startswith("paperlight-")
+    assert calls[1]["idempotency"].startswith("paperlight-")
+    assert calls[0]["idempotency"] != calls[1]["idempotency"]
+    assert [(row["operation"], row["input_units"], row["output_units"]) for row in observations] == [
+        ("rewrite", 120, 40),
+        ("validation", 80, 12),
+    ]
 
     monkeypatch.setenv("REWRITE_MODE", "mock")
     get_settings.cache_clear()

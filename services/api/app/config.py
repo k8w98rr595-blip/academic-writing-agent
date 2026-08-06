@@ -60,6 +60,11 @@ class Settings:
     deepseek_model: str
     deepseek_validator_model: str
     provider_timeout_seconds: int
+    paid_call_hourly_warning: int
+    paid_call_hourly_hard_limit: int
+    provider_failure_breaker_threshold: int
+    provider_breaker_seconds: int
+    provider_usage_retention_days: int
 
     @property
     def is_production(self) -> bool:
@@ -103,6 +108,11 @@ def get_settings() -> Settings:
         deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro"),
         deepseek_validator_model=os.getenv("DEEPSEEK_VALIDATOR_MODEL", "deepseek-v4-flash"),
         provider_timeout_seconds=int(os.getenv("PROVIDER_TIMEOUT_SECONDS", "45")),
+        paid_call_hourly_warning=int(os.getenv("PAID_CALL_HOURLY_WARNING", "10")),
+        paid_call_hourly_hard_limit=int(os.getenv("PAID_CALL_HOURLY_HARD_LIMIT", "20")),
+        provider_failure_breaker_threshold=int(os.getenv("PROVIDER_FAILURE_BREAKER_THRESHOLD", "5")),
+        provider_breaker_seconds=int(os.getenv("PROVIDER_BREAKER_SECONDS", "900")),
+        provider_usage_retention_days=int(os.getenv("PROVIDER_USAGE_RETENTION_DAYS", "30")),
     )
     settings.object_storage_dir.mkdir(parents=True, exist_ok=True)
     if settings.is_production and "*" in settings.allowed_origins:
@@ -128,6 +138,14 @@ def get_settings() -> Settings:
         raise RuntimeError("Pangram polling settings must be positive")
     if settings.detector_mode == "pangram":
         _require_official_endpoint(settings.pangram_api_url, "text.external-api.pangram.com", "Pangram", {""})
+    if not 1 <= settings.paid_call_hourly_warning <= settings.paid_call_hourly_hard_limit <= 1000:
+        raise RuntimeError("Paid-call warning and hard-limit settings are invalid")
+    if not 2 <= settings.provider_failure_breaker_threshold <= 100:
+        raise RuntimeError("Provider failure breaker threshold is invalid")
+    if not 60 <= settings.provider_breaker_seconds <= 86400:
+        raise RuntimeError("Provider breaker duration is invalid")
+    if not 1 <= settings.provider_usage_retention_days <= 365:
+        raise RuntimeError("Provider usage retention is invalid")
     return settings
 
 

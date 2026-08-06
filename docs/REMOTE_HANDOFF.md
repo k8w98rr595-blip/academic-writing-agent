@@ -29,13 +29,15 @@ The following checks have passed:
 
 The API runs with production CORS, HTTPS-only owner access, eager jobs, local volume-backed object storage, an explicitly labeled Mock detector, and server-only DeepSeek rewrite. `DATABASE_URL` and `REDIS_URL` reference the managed Railway services. No provider key is present in the frontend, Git repository, documentation, or knowledge vault.
 
-TOTP is temporarily disabled in production with `REQUIRE_TOTP=0` as of 2026-07-14. Password-only login and logout were verified against the production API. The existing TOTP secret remains configured so the second factor can be restored by setting `REQUIRE_TOTP=1` and redeploying; until then, owner access has reduced account protection.
+The owner-approved current stage uses password-only authentication with `REQUIRE_TOTP=0`. Password-only login and logout were verified against the production API. TOTP restoration is intentionally out of scope for this stage; no deployment or verification step should read or alter TOTP material. Password compromise can grant owner access, so public registration and student access remain prohibited.
 
 Credential follow-up: the post-logout browser check exposed the saved owner-password field value to the automation accessibility channel. No value is included in this repository. Rotate the owner password, deploy only its replacement hash, verify old-session rejection, and disable password autofill for the production origin before continued routine use.
 
 Local handoff files are ignored and untracked. Their ACL inheritance is disabled and access is restricted to the current user, SYSTEM, and Administrators, but they remain plaintext. Move the values to the owner's password manager, rotate the related credentials, and delete the handoff files only after explicit owner confirmation. Do not copy login or TOTP material into Git, GitHub variables, logs, or documentation.
 
-Operational custody, rotation, TOTP restoration, and provider budget thresholds are defined in [Cost alerts and credential custody runbook](COST_AND_CREDENTIALS_RUNBOOK.md). Reproducible acceptance evidence is in [Production acceptance record — 2026-07-15](PRODUCTION_ACCEPTANCE_2026-07-15.md) and [Production multi-turn Agent acceptance — 2026-08-01](PRODUCTION_ACCEPTANCE_2026-08-01.md).
+Operational custody, password rotation, the password-only risk boundary, and provider budget thresholds are defined in [Cost alerts and credential custody runbook](COST_AND_CREDENTIALS_RUNBOOK.md). Reproducible acceptance evidence is in [Production acceptance record — 2026-07-15](PRODUCTION_ACCEPTANCE_2026-07-15.md) and [Production multi-turn Agent acceptance — 2026-08-01](PRODUCTION_ACCEPTANCE_2026-08-01.md).
+
+The current backend adds a content-free paid-call ledger and the owner-only `GET /api/v1/provider-usage/summary` endpoint. Defaults are a warning at ten hourly calls, a hard stop before exceeding twenty, five consecutive failures opening a fifteen-minute Provider breaker, hashed duplicate-call protection, and 30-day operational retention. Login, reading, export, and deletion remain available while provider calls are paused. Provider dashboards remain authoritative for monetary charges.
 
 ## Operations
 

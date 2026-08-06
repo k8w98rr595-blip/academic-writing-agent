@@ -60,3 +60,42 @@ class JobEvent(BaseModel):
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
     result_ref: str | None = None
     error_code: str | None = None
+
+
+class ProviderUsagePeriod(BaseModel):
+    calls: int
+    successes: int
+    failures: int
+    reserved: int
+    inputUnits: int
+    outputUnits: int
+
+
+class ProviderUsagePeriods(BaseModel):
+    hour: ProviderUsagePeriod
+    day: ProviderUsagePeriod
+    week: ProviderUsagePeriod
+    month: ProviderUsagePeriod
+
+
+class ProviderUsageLimits(BaseModel):
+    hourlyWarning: int
+    hourlyHardLimit: int
+    failureBreakerThreshold: int
+    breakerSeconds: int
+    retentionDays: int
+
+
+class ProviderBreakerState(BaseModel):
+    provider: str
+    open: bool
+    reopensAt: str | None = None
+
+
+class ProviderUsageSummaryResponse(BaseModel):
+    periods: ProviderUsagePeriods
+    limits: ProviderUsageLimits
+    breakers: list[ProviderBreakerState]
+    warnings: list[str]
+    generatedAt: str
+    disclaimer: str

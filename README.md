@@ -6,6 +6,8 @@ The writing Agent is a multi-turn, author-reviewed workflow. The owner selects a
 
 The default providers are deterministic mocks for product testing. Mock results are always labeled as demonstrations and are not Turnitin results or proof of authorship.
 
+The current production stage intentionally uses password-only owner authentication (`REQUIRE_TOTP=0`). Paid provider work is guarded by a content-free usage ledger, an hourly warning/hard limit, duplicate-call protection, and a failure circuit breaker. These controls do not replace the billing dashboards and do not make the deployment suitable for public or student accounts.
+
 ## Local development
 
 Prerequisites: Node.js 22+, pnpm, and Python 3.12+.
@@ -37,5 +39,7 @@ Provider keys are server-only. Detection has one active adapter boundary: determ
 - Database/queue/object storage: local Docker Compose for development; managed PostgreSQL, Redis, and S3-compatible storage for public rollout.
 
 This deployment remains private to the configured owner. DeepSeek rewrite is enabled, while real Pangram detection, public registration, payments, and student rollout remain disabled until their separate evaluation and compliance gates are complete.
+
+Create a replacement owner-password verifier without displaying or storing plaintext with `python scripts/hash_owner_password.py`. The ignored output contains only an ACL-restricted Argon2id verifier for `OWNER_PASSWORD_HASH`; production password rotation still requires the owner to update Railway and verify a fresh login.
 
 See `docs/ARCHITECTURE.md`, `benchmark/README.md`, `docs/DEPLOYMENT.md`, `docs/REMOTE_HANDOFF.md`, `docs/SECURITY.md`, and `docs/PROVIDER_SETUP.md`.

@@ -12,9 +12,16 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_API_KEY=<configure-in-Railway-api-service>
 DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_VALIDATOR_MODEL=deepseek-v4-flash
+PAID_CALL_HOURLY_WARNING=10
+PAID_CALL_HOURLY_HARD_LIMIT=20
+PROVIDER_FAILURE_BREAKER_THRESHOLD=5
+PROVIDER_BREAKER_SECONDS=900
+PROVIDER_USAGE_RETENTION_DAYS=30
 ```
 
 `DEEPSEEK_API_KEY` belongs only in the Railway backend service. It must not be placed in GitHub Pages variables, any `NEXT_PUBLIC_*` value, source control, screenshots, or chat.
+
+The application reserves two paid-call slots before each DeepSeek proposal—one for generation and one for semantic validation—and finalizes them with provider-reported token counts when available. Exact duplicate requests are blocked by hashed idempotency metadata; the raw instruction and passage are never stored in usage records.
 
 ## Pangram detection
 
@@ -47,3 +54,5 @@ PROVIDER_TIMEOUT_SECONDS=45
 7. If acceptance fails, restore `DETECTOR_MODE=mock`. Rotate the key only when exposure is suspected; do not print it while troubleshooting.
 
 The task-creation POST is intentionally sent once. Paperlight does not automatically repeat an ambiguous or timed-out paid submission. Polling GET requests use bounded retries because they do not create a new task.
+
+After activation, confirm the owner-only `/api/v1/provider-usage/summary` endpoint records one Pangram detection operation and shows no open breaker. This application summary is not a bill; reconcile it against Pangram's dashboard after the single approved synthetic run.

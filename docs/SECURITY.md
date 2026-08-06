@@ -2,13 +2,14 @@
 
 | Operation | Identity | Ownership/state rule | Input controls | Audit event |
 |---|---|---|---|---|
-| Login | Configured owner | Owner email only | Generic errors, Argon2id, TOTP, rate limit | `auth.login` / `auth.failure` |
+| Login | Configured owner | Owner email only | Generic errors, Argon2id, password-hash-bound Session, rate limit; current stage is password-only | `auth.login` / `auth.failure` |
 | Read/edit document | Active server session | `document.owner_email == session.owner_email` | UUID, version precondition, word limit | `document.read` / `document.version` |
 | Run detection | Active owner | Current owned version only | Data-processing gate, official-host allowlist, input limits, timeout, response/range schema, bounded retries | `analysis.complete` / `analysis.failure` |
 | Propose/refine patch | Active owner | Rewrite session, immutable base version, paragraph and prior pending patch must match | Instruction/selection limits, server-derived context, explicit full-document confirmation, protected tokens | `patch.proposed` |
 | Accept patch | Active owner | Pending patch, current base version | Exact original match, protected-token equality | `patch.accepted` |
 | Export | Active owner | Current owned version | Generated server-side filename | `document.exported` |
 | Delete | Active owner | Owned document only | Cancels jobs and removes objects | `document.deleted` |
+| View Provider usage | Active owner | Current owner aggregate only | Fixed time buckets; no caller-selected query or raw event access | `provider.usage_viewed`; usage rows contain no paper content or credentials |
 
 Residual deployment risks: GitHub Pages and Railway are cross-origin, so the frontend uses a bearer session kept in `sessionStorage`; CSP and XSS prevention remain critical. Next.js static export requires inline bootstrap scripts, so the Pages-compatible meta CSP permits inline scripts while still denying plugins, frames, arbitrary origins, and `eval` in production. A reverse-proxy deployment should replace the meta policy with nonce-based response headers. Provider and public-China compliance checks are external release gates.
 
@@ -24,6 +25,8 @@ CSRF note: the API does not authenticate with cookies; it requires an explicit `
 - The files under `data/` remain one-time plaintext handoffs, not a password manager. Move their values into the owner's password manager, rotate the corresponding production credentials, and delete the handoff files only after explicit owner approval.
 - Audit metadata uses a fixed allowlist. Paper text, rewrite text, credentials, sessions, provider response bodies, and arbitrary caller-supplied detail keys must never enter `AuditEvent.details`.
 - A server session carries a one-way fingerprint of the current owner-password hash. Changing the hash invalidates previously issued sessions after deployment, so password rotation has an explicit revocation effect.
-- Production TOTP is temporarily disabled. The owner-only service must not be opened to students until the second factor is restored and tested in a fresh browser session.
+- Production deliberately remains password-only with `REQUIRE_TOTP=0` at the owner's direction. This is accepted only for the private owner stage; the service must not be opened to students under this authentication boundary.
+- Paid Provider reservations and observations contain only provider/operation/model metadata, SHA-256 idempotency hashes, status, latency, and bounded provider-reported units. They never contain document text, Agent instructions, model responses, credentials, tokens, or raw idempotency keys.
+- Paid work is denied before outbound traffic when the hourly hard limit would be exceeded or a Provider breaker is open. Exact duplicate paid work is rejected for 24 hours. Provider controls do not block login, read, export, or immediate deletion.
 
-Budget thresholds, provider-key ownership, rotation order, and TOTP restoration are maintained in [Cost alerts and credential custody runbook](COST_AND_CREDENTIALS_RUNBOOK.md).
+Budget thresholds, provider-key ownership, password rotation, and the current password-only risk boundary are maintained in [Cost alerts and credential custody runbook](COST_AND_CREDENTIALS_RUNBOOK.md).

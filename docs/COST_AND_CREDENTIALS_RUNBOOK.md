@@ -1,6 +1,6 @@
 # Cost alerts and credential custody runbook
 
-Last verified: 2026-07-15 (Asia/Shanghai). This document contains no passwords, tokens, API keys, TOTP seeds, session values, or recovery codes.
+Last implementation update: 2026-08-06 (Asia/Shanghai). Dashboard balances below are historical point-in-time observations and must be rechecked before any purchase decision. This document contains no passwords, tokens, API keys, TOTP seeds, session values, or recovery codes.
 
 ## Current account state
 
@@ -26,12 +26,14 @@ Hard limits are intentionally higher than soft limits. A Railway hard limit can 
 
 ## Abnormal-use alerts
 
-- Hourly call volume warning: more than `max(10, 3 × the trailing seven-day hourly median)` paid calls.
-- Circuit-breaker trigger: more than `max(20, 5 × median)` paid calls in one hour, five consecutive transient provider failures, or a retry rate above 10% with at least ten calls in fifteen minutes.
-- Duplicate-work alert: more than one paid task for the same `owner + document_version + provider + operation` idempotency key in 24 hours, or more than two distinct paid task ids for the same document version/provider in fifteen minutes.
+- Application warning: ten recorded paid calls in one hour. Application hard limit: twenty paid-call reservations in one hour. A DeepSeek proposal reserves two calls because generation and independent validation are separate provider requests.
+- Circuit-breaker trigger: five consecutive failed or outcome-unknown calls for one Provider. The Provider reopens after fifteen minutes; a successful call resets the consecutive-failure sequence.
+- Duplicate-work protection: a matching hashed `owner + provider + operation + idempotency key` in reserved, successful, or outcome-unknown state is rejected for 24 hours. Only the hash is persisted.
 - Retry policy: initial attempt plus at most one retry, bounded exponential backoff, honor a short `Retry-After`, and never retry 400, 401, 402, 403, or 422. Pangram task creation is submitted only once because its official API does not document an idempotency header; only polling is retried.
 - Breaker behavior: pause new paid tasks for fifteen minutes. Login, view, export, immediate deletion, and already-generated reports remain available.
 - Review cadence: check dashboards daily while on the Railway trial; reconcile request count and charges weekly; review monthly limits and keys on the first day of each month.
+
+The owner-only `GET /api/v1/provider-usage/summary` endpoint returns hour/day/week/month call counts, provider-reported input/output units, warnings, and breaker state. `provider_usage_events` retains operational metadata for 30 days and deliberately excludes paper text, prompts, responses, credentials, Session values, and raw idempotency keys. This is an operational safeguard, not a currency ledger; Railway, DeepSeek, and Pangram dashboards remain authoritative for charges and balances.
 
 ## Credential custody boundary
 
@@ -63,18 +65,6 @@ During the final post-logout check, saved-password autofill exposed the owner-pa
 7. Rotate provider keys every 90 days, immediately after suspected exposure, or when a collaborator/device loses authorization. Review owner password and recovery material every 90 days.
 8. Keep an offline recovery record in a physically secure location. Test account recovery twice per year without revealing or copying the recovery values into project documentation.
 
-## Restoring TOTP
+## Current password-only authentication boundary
 
-TOTP remains deliberately disabled in production. Password compromise currently grants owner access, so the service must remain single-owner and should not be opened to students.
-
-To restore it:
-
-1. Confirm the saved TOTP seed is available in the password manager and the authenticator can generate a current code.
-2. Set `REQUIRE_TOTP=1` on the Railway `api` service without revealing `OWNER_TOTP_SECRET`.
-3. Redeploy the API.
-4. Confirm `/api/v1/auth/status` reports `configured=true` and `requiresTotp=true`.
-5. In a fresh browser session, sign in using the owner password and current code.
-6. Confirm the old password-only session no longer authorizes document access.
-7. Update `PAPERLIGHT_EXPECTED_REQUIRES_TOTP=true` if that repository variable is introduced, then run Production smoke.
-
-Do not enable TOTP until the owner is present to complete step 5; do not reveal, copy, or regenerate the existing seed as part of routine deployment.
+The owner explicitly excluded TOTP restoration from this implementation stage. Production remains `REQUIRE_TOTP=0`, the release checker expects `requiresTotp=false`, and routine work must not read, regenerate, or change TOTP material. Password compromise therefore grants owner access. Keep the service single-owner, rotate the exposed password before continued use, disable password autofill for the production origin, and do not open registration or student access. Stronger authentication is a separate future authorization decision, not an unfinished step in this stage.

@@ -217,6 +217,52 @@
         }
       }
     },
+    "/api/v1/provider-usage/summary": {
+      "get": {
+        "summary": "Get Provider Usage Summary",
+        "operationId": "get_provider_usage_summary_api_v1_provider_usage_summary_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderUsageSummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/documents/{document_id}": {
       "get": {
         "summary": "Read Document",
@@ -1017,6 +1063,172 @@
         ],
         "title": "PatchDecisionRequest"
       },
+      "ProviderBreakerState": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "open": {
+            "type": "boolean",
+            "title": "Open"
+          },
+          "reopensAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reopensat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "open"
+        ],
+        "title": "ProviderBreakerState"
+      },
+      "ProviderUsageLimits": {
+        "properties": {
+          "hourlyWarning": {
+            "type": "integer",
+            "title": "Hourlywarning"
+          },
+          "hourlyHardLimit": {
+            "type": "integer",
+            "title": "Hourlyhardlimit"
+          },
+          "failureBreakerThreshold": {
+            "type": "integer",
+            "title": "Failurebreakerthreshold"
+          },
+          "breakerSeconds": {
+            "type": "integer",
+            "title": "Breakerseconds"
+          },
+          "retentionDays": {
+            "type": "integer",
+            "title": "Retentiondays"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hourlyWarning",
+          "hourlyHardLimit",
+          "failureBreakerThreshold",
+          "breakerSeconds",
+          "retentionDays"
+        ],
+        "title": "ProviderUsageLimits"
+      },
+      "ProviderUsagePeriod": {
+        "properties": {
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "successes": {
+            "type": "integer",
+            "title": "Successes"
+          },
+          "failures": {
+            "type": "integer",
+            "title": "Failures"
+          },
+          "reserved": {
+            "type": "integer",
+            "title": "Reserved"
+          },
+          "inputUnits": {
+            "type": "integer",
+            "title": "Inputunits"
+          },
+          "outputUnits": {
+            "type": "integer",
+            "title": "Outputunits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "calls",
+          "successes",
+          "failures",
+          "reserved",
+          "inputUnits",
+          "outputUnits"
+        ],
+        "title": "ProviderUsagePeriod"
+      },
+      "ProviderUsagePeriods": {
+        "properties": {
+          "hour": {
+            "$ref": "#/components/schemas/ProviderUsagePeriod"
+          },
+          "day": {
+            "$ref": "#/components/schemas/ProviderUsagePeriod"
+          },
+          "week": {
+            "$ref": "#/components/schemas/ProviderUsagePeriod"
+          },
+          "month": {
+            "$ref": "#/components/schemas/ProviderUsagePeriod"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hour",
+          "day",
+          "week",
+          "month"
+        ],
+        "title": "ProviderUsagePeriods"
+      },
+      "ProviderUsageSummaryResponse": {
+        "properties": {
+          "periods": {
+            "$ref": "#/components/schemas/ProviderUsagePeriods"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ProviderUsageLimits"
+          },
+          "breakers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderBreakerState"
+            },
+            "type": "array",
+            "title": "Breakers"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "generatedAt": {
+            "type": "string",
+            "title": "Generatedat"
+          },
+          "disclaimer": {
+            "type": "string",
+            "title": "Disclaimer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "periods",
+          "limits",
+          "breakers",
+          "warnings",
+          "generatedAt",
+          "disclaimer"
+        ],
+        "title": "ProviderUsageSummaryResponse"
+      },
       "RestoreVersionRequest": {
         "properties": {
           "expected_current_version_id": {
@@ -1051,8 +1263,38 @@
             "maxLength": 10000,
             "title": "Selected Text",
             "default": ""
+          },
+          "previous_patch_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Patch Id"
+          },
+          "context_scope": {
+            "type": "string",
+            "enum": [
+              "selection",
+              "paragraph",
+              "section",
+              "document"
+            ],
+            "title": "Context Scope",
+            "default": "selection"
+          },
+          "confirm_full_document_context": {
+            "type": "boolean",
+            "title": "Confirm Full Document Context",
+            "default": false
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "instruction",

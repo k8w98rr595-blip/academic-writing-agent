@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
-import secrets
-from typing import Any
+import time
+from typing import Any, Callable
 
 import httpx
 from fastapi import HTTPException, status
@@ -11,6 +12,9 @@ from fastapi import HTTPException, status
 from ..config import get_settings
 from ..text import assert_protected_equal
 from .http_client import post_json_with_retry
+
+
+UsageObserver = Callable[..., None]
 
 
 SAFE_REPLACEMENTS = (
@@ -84,8 +88,6 @@ def _deepseek_error(response: httpx.Response) -> HTTPException:
 
 
 def _deepseek_json(response: httpx.Response) -> dict[str, Any]:
-    if response.status_code >= 400:
-        raise _deepseek_error(response)
     try:
         content = response.json()["choices"][0]["message"]["content"]
         if not isinstance(content, str) or not content.strip():
@@ -101,6 +103,20 @@ def _deepseek_json(response: httpx.Response) -> dict[str, Any]:
         ) from error
 
 
+def _response_usage(response: httpx.Response) -> tuple[int | None, int | None]:
+    try:
+        usage = response.json().get("usage", {})
+    except (TypeError, ValueError):
+        return None, None
+    if not isinstance(usage, dict):
+        return None, None
+    prompt = usage.get("prompt_tokens")
+    completion = usage.get("completion_tokens")
+    prompt_value = prompt if isinstance(prompt, int) and not isinstance(prompt, bool) and prompt >= 0 else None
+    completion_value = completion if isinstance(completion, int) and not isinstance(completion, bool) and completion >= 0 else None
+    return prompt_value, completion_value
+
+
 async def _deepseek_completion(
     *,
     model: str,
@@ -108,6 +124,9 @@ async def _deepseek_completion(
     user_payload: dict[str, str],
     thinking: bool,
     max_tokens: int,
+    operation: str,
+    idempotency_key: str,
+    usage_observer: UsageObserver | None,
 ) -> dict[str, Any]:
     settings = get_settings()
     payload: dict[str, Any] = {
@@ -123,28 +142,47 @@ async def _deepseek_completion(
     }
     if thinking:
         payload["reasoning_effort"] = "high"
+    started = time.perf_counter()
     try:
         response = await post_json_with_retry(
             f"{settings.deepseek_base_url.rstrip('/')}/chat/completions",
             headers={
                 "Authorization": f"Bearer {settings.deepseek_api_key}",
                 "Content-Type": "application/json",
-                "Idempotency-Key": f"paperlight-{secrets.token_hex(16)}",
+                "Idempotency-Key": "paperlight-" + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:48],
             },
             payload=payload,
             timeout_seconds=settings.provider_timeout_seconds,
         )
     except httpx.TimeoutException as error:
+        if usage_observer:
+            usage_observer(operation=operation, final_status="outcome_unknown", error_code="timeout", latency_ms=round((time.perf_counter() - started) * 1000), input_units=None, output_units=None, model_version=model)
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail="DeepSeek timed out while preparing the rewrite",
         ) from error
     except httpx.RequestError as error:
+        if usage_observer:
+            usage_observer(operation=operation, final_status="outcome_unknown", error_code="request_error", latency_ms=round((time.perf_counter() - started) * 1000), input_units=None, output_units=None, model_version=model)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="DeepSeek is temporarily unreachable",
         ) from error
-    return _deepseek_json(response)
+    latency_ms = round((time.perf_counter() - started) * 1000)
+    input_units, output_units = _response_usage(response)
+    if response.status_code >= 400:
+        if usage_observer:
+            usage_observer(operation=operation, final_status="failed", error_code=f"http_{response.status_code}", latency_ms=latency_ms, input_units=input_units, output_units=output_units, model_version=model)
+        raise _deepseek_error(response)
+    try:
+        parsed = _deepseek_json(response)
+    except HTTPException:
+        if usage_observer:
+            usage_observer(operation=operation, final_status="failed", error_code="invalid_response", latency_ms=latency_ms, input_units=input_units, output_units=output_units, model_version=model)
+        raise
+    if usage_observer:
+        usage_observer(operation=operation, final_status="success", error_code=None, latency_ms=latency_ms, input_units=input_units, output_units=output_units, model_version=model)
+    return parsed
 
 
 def _mock_rewrite(original: str) -> tuple[str, str]:
@@ -168,6 +206,8 @@ async def _deepseek_rewrite(
     original: str,
     current_candidate: str,
     context_text: str,
+    idempotency_seed: str,
+    usage_observer: UsageObserver | None,
 ) -> tuple[str, str]:
     settings = get_settings()
     if not settings.deepseek_api_key:
@@ -184,6 +224,9 @@ async def _deepseek_rewrite(
         },
         thinking=True,
         max_tokens=4096,
+        operation="rewrite",
+        idempotency_key=f"{idempotency_seed}:rewrite",
+        usage_observer=usage_observer,
     )
     try:
         revised_value = rewrite["revisedText"]
@@ -208,6 +251,9 @@ async def _deepseek_rewrite(
         user_payload={"originalText": original, "revisedText": revised},
         thinking=False,
         max_tokens=768,
+        operation="validation",
+        idempotency_key=f"{idempotency_seed}:validation",
+        usage_observer=usage_observer,
     )
     approved = validation.get("approved") is True
     meaning_preserved = validation.get("meaningPreserved") is True
@@ -236,6 +282,8 @@ async def propose_rewrite(
     anchor_text: str = "",
     current_candidate: str = "",
     context_text: str = "",
+    idempotency_seed: str = "",
+    usage_observer: UsageObserver | None = None,
 ) -> dict:
     selected = selected_text.strip()
     original = anchor_text.strip() or (selected if selected and selected in paragraph_text else paragraph_text)
@@ -247,7 +295,18 @@ async def propose_rewrite(
     if settings.rewrite_mode == "mock":
         revised, reason = _mock_rewrite(candidate)
     elif settings.rewrite_mode == "deepseek":
-        revised, reason = await _deepseek_rewrite(instruction, paragraph_id, original, candidate, context_text)
+        seed = idempotency_seed or hashlib.sha256(
+            f"{paragraph_id}:{instruction}:{original}:{candidate}".encode("utf-8")
+        ).hexdigest()
+        revised, reason = await _deepseek_rewrite(
+            instruction,
+            paragraph_id,
+            original,
+            candidate,
+            context_text,
+            seed,
+            usage_observer,
+        )
     else:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Unsupported rewrite mode")
     assert_protected_equal(original, revised)

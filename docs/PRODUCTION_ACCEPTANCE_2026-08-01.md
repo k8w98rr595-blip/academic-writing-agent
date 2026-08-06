@@ -51,7 +51,7 @@ Successful proposals exposed the expected Pro and Flash model metadata. No Pangr
 ## Residual risks and follow-up
 
 1. Real Pangram remains disabled until the owner supplies a server-side key, accepts the provider's current data-processing terms, approves cost, and completes a synthetic paid acceptance run.
-2. TOTP remains disabled. Restore `REQUIRE_TOTP=1` and redeploy after confirming the owner's authenticator recovery path.
+2. TOTP remains disabled. On 2026-08-06 the owner explicitly excluded restoration from the current implementation stage; password-only access is an accepted temporary risk and public/student access remains prohibited.
 3. The previously exposed owner password must still be rotated; deploy only its replacement hash and verify prior sessions are rejected.
 4. Repeat the DOCX download in a browser surface that exposes the downloaded file, validate the ZIP-based Word package, and remove the local test artifact.
 5. AI writing-risk values remain probability-style internal signals. This acceptance does not support accuracy, authorship, misconduct, Turnitin-equivalence, or guaranteed-risk-reduction claims.
