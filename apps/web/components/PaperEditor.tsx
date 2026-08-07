@@ -1,8 +1,8 @@
 "use client";
 
-import { ClipboardEvent, FocusEvent, KeyboardEvent, MouseEvent } from "react";
+import { ClipboardEvent, FocusEvent, KeyboardEvent, MouseEvent, useState } from "react";
 import type { EvidenceSpan, Paragraph } from "@/lib/types";
-import { splitHighlights } from "@/lib/text";
+import { editableChunks } from "@/lib/text";
 
 type Selection = { paragraphId: string; text: string };
 
@@ -17,6 +17,8 @@ type Props = {
 };
 
 export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur, onSelection, onRiskSpan }: Props) {
+  const [editingParagraphId, setEditingParagraphId] = useState<string | null>(null);
+
   function captureSelection(event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) {
     const selection = window.getSelection();
     const target = event.currentTarget;
@@ -33,7 +35,11 @@ export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur
       {paragraphs.map((paragraph, index) => {
         const paragraphSpans = spans.filter((span) => span.paragraphId === paragraph.id);
         const isHeading = paragraph.text.length < 80 && !/[.!?]$/.test(paragraph.text);
-        const chunks = splitHighlights(paragraph.text, paragraphSpans);
+        // Evidence marks are React-managed children. Browsers mutate a contentEditable
+        // subtree directly while the author types, so keep the active paragraph as one
+        // plain text node until blur; otherwise React can reconcile against nodes that
+        // the browser has already removed and crash the workspace.
+        const chunks = editableChunks(paragraph.text, paragraphSpans, editingParagraphId === paragraph.id);
         return (
           <p
             key={paragraph.id}
@@ -45,8 +51,16 @@ export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur
             role="textbox"
             aria-multiline="true"
             aria-label={isHeading ? `Heading ${index + 1}` : `Paragraph ${index + 1}`}
+            onFocus={(event: FocusEvent<HTMLElement>) => {
+              if (event.target === event.currentTarget) setEditingParagraphId(paragraph.id);
+            }}
             onInput={onDirty}
-            onBlur={(event: FocusEvent<HTMLElement>) => onParagraphBlur(paragraph.id, event.currentTarget.innerText.trim())}
+            onBlur={(event: FocusEvent<HTMLElement>) => {
+              if (event.target !== event.currentTarget) return;
+              const value = event.currentTarget.innerText.trim();
+              setEditingParagraphId(null);
+              onParagraphBlur(paragraph.id, value);
+            }}
             onPointerDownCapture={(event) => {
               const evidence = (event.target as HTMLElement).closest("mark.evidence");
               if (!evidence || !event.currentTarget.contains(evidence)) return;

@@ -18,6 +18,10 @@ export function splitHighlights(text: string, spans: EvidenceSpan[]): HighlightC
   return chunks.length ? chunks : [{ text }];
 }
 
+export function editableChunks(text: string, spans: EvidenceSpan[], editing: boolean): HighlightChunk[] {
+  return editing ? [{ text }] : splitHighlights(text, spans);
+}
+
 export function countWords(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }

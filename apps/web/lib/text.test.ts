@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countWords, splitHighlights } from "./text";
+import { countWords, editableChunks, splitHighlights } from "./text";
 
 describe("text helpers", () => {
   it("splits non-overlapping evidence ranges", () => {
@@ -17,5 +17,16 @@ describe("text helpers", () => {
 
   it("counts coursework words", () => {
     expect(countWords("One two\nthree")).toBe(3);
+  });
+
+  it("renders an actively edited paragraph as one plain text node", () => {
+    const spans = [
+      { paragraphId: "p1", start: 0, end: 5, score: 0.9, confidence: 0.9, classification: "ai_generated" as const },
+    ];
+    expect(editableChunks("Alpha beta", spans, true)).toEqual([{ text: "Alpha beta" }]);
+    expect(editableChunks("Alpha beta", spans, false)[0]).toEqual({
+      text: "Alpha",
+      classification: "ai_generated",
+    });
   });
 });
