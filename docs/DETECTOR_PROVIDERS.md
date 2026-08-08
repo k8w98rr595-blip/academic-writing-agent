@@ -32,7 +32,7 @@ Pangram 3 与 Pangram 4 的可验证区别：Pangram 4 使用选择器 `pangram-
 | `AI-Assisted` window | `classification=ai_assisted` | 浅蓝高亮 |
 | `Human Written` window | 不保存高亮 | 仍计入人工写作比例 |
 
-Pangram 4 可能规范化返回文本，官方说明窗口偏移指向返回的顶层 `text`。Paperlight 不猜测规范化映射：只有返回文本与提交文本逐字相同时才映射到稳定段落 ID；否则整次结果以 `range_mismatch` 失败关闭，不保存百分比或高亮。
+Pangram 4 可能规范化返回文本，官方说明窗口偏移指向返回的顶层 `text`。Paperlight 先验证每个窗口与该返回文本严格一致，再把偏移映射回稳定段落 ID。映射只接受可证明等价的空白规范化（例如段落分隔换行被折叠）：所有非空白字符必须逐字、同序一致，映射后的窗口也必须保持同一非空白字符序列。任何正文字符变化、越界、重叠或不确定映射都会令整次结果以 `range_mismatch` 失败关闭，不保存百分比或高亮。
 
 ## 错误、费用和滥用保护
 

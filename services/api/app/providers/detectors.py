@@ -282,11 +282,12 @@ class PangramDetectorProvider:
                 request_id=task_id,
             )
         returned_text = completed.get("text")
-        if not isinstance(returned_text, str) or returned_text != text:
+        if not isinstance(returned_text, str):
             raise DetectorProviderError(
-                "range_mismatch", "Pangram returned text that differs from the submission", retryable=False,
+                "range_mismatch", "Pangram returned an invalid analyzed text value", retryable=False,
                 request_id=task_id,
             )
+        boundary_map = _whitespace_normalization_boundary_map(text, returned_text, task_id)
         version = _validated_string(completed.get("version"), "Pangram version", SAFE_VERSION, task_id)
         if not version.startswith("4."):
             raise DetectorProviderError(
@@ -296,12 +297,17 @@ class PangramDetectorProvider:
                 request_id=task_id,
             )
         prediction = _validated_prediction(completed.get("prediction_short"), task_id)
-        windows = _validated_windows(text, completed.get("windows"), task_id)
+        windows = _validated_windows(returned_text, completed.get("windows"), task_id)
+        windows = _remap_normalized_windows(text, returned_text, windows, boundary_map, task_id)
         spans = _map_windows_to_paragraphs(paragraphs, windows, task_id)
         combined = fraction_ai + fraction_assisted
         warnings = [
             "Combined risk is the transparent sum of Pangram AI-generated and AI-assisted fractions."
         ]
+        if returned_text != text:
+            warnings.append(
+                "Pangram normalized whitespace before inference; marked ranges were mapped back to the original text."
+            )
         if combined > 0 and not spans:
             warnings.append("Pangram reported document-level risk without a marked non-human segment.")
         return ProviderResult(
@@ -460,6 +466,97 @@ def _validated_windows(text: str, value: Any, request_id: str) -> list[dict[str,
             "range_mismatch", "Pangram returned overlapping windows", retryable=False, request_id=request_id
         )
     return windows
+
+
+def _whitespace_normalization_boundary_map(
+    original: str, returned: str, request_id: str
+) -> list[int]:
+    """Map Pangram's normalized-text boundaries back to submitted text.
+
+    Pangram 4 documents that it may normalize text before inference. We only
+    accept normalization that changes whitespace. Every non-whitespace code
+    point must remain identical and in the same order; any content change fails
+    closed instead of guessing highlight positions.
+    """
+
+    if returned == original:
+        return list(range(len(original) + 1))
+
+    returned_content = [(index, char) for index, char in enumerate(returned) if not char.isspace()]
+    original_content = [(index, char) for index, char in enumerate(original) if not char.isspace()]
+    if not returned_content or [char for _, char in returned_content] != [
+        char for _, char in original_content
+    ]:
+        raise DetectorProviderError(
+            "range_mismatch",
+            "Pangram normalized text cannot be mapped safely to the submission",
+            retryable=False,
+            request_id=request_id,
+        )
+
+    boundary_map: list[int | None] = [None] * (len(returned) + 1)
+
+    def map_gap(returned_start: int, returned_end: int, original_start: int, original_end: int) -> None:
+        returned_width = returned_end - returned_start
+        original_width = original_end - original_start
+        for boundary in range(returned_start, returned_end + 1):
+            if returned_width == 0:
+                mapped = original_end
+            else:
+                mapped = original_start + round(
+                    ((boundary - returned_start) * original_width) / returned_width
+                )
+            boundary_map[boundary] = mapped
+
+    returned_cursor = 0
+    original_cursor = 0
+    for (returned_index, _), (original_index, _) in zip(returned_content, original_content):
+        map_gap(returned_cursor, returned_index, original_cursor, original_index)
+        boundary_map[returned_index] = original_index
+        boundary_map[returned_index + 1] = original_index + 1
+        returned_cursor = returned_index + 1
+        original_cursor = original_index + 1
+    map_gap(returned_cursor, len(returned), original_cursor, len(original))
+
+    if any(value is None for value in boundary_map):
+        raise DetectorProviderError(
+            "range_mismatch",
+            "Pangram normalized text cannot be mapped safely to the submission",
+            retryable=False,
+            request_id=request_id,
+        )
+    return [int(value) for value in boundary_map]
+
+
+def _remap_normalized_windows(
+    original: str,
+    returned: str,
+    windows: list[dict[str, Any]],
+    boundary_map: list[int],
+    request_id: str,
+) -> list[dict[str, Any]]:
+    remapped: list[dict[str, Any]] = []
+    for window in windows:
+        start = boundary_map[window["start"]]
+        end = boundary_map[window["end"]]
+        _validate_provider_range(original, start, end, "Pangram", request_id)
+        returned_fragment = returned[window["start"] : window["end"]]
+        original_fragment = original[start:end]
+        if "".join(returned_fragment.split()) != "".join(original_fragment.split()):
+            raise DetectorProviderError(
+                "range_mismatch",
+                "Pangram normalized window cannot be mapped safely to the submission",
+                retryable=False,
+                request_id=request_id,
+            )
+        remapped.append({**window, "start": start, "end": end})
+    remapped.sort(key=lambda item: (item["start"], item["end"]))
+    if any(current["start"] < previous["end"] for previous, current in zip(remapped, remapped[1:])):
+        raise DetectorProviderError(
+            "range_mismatch", "Pangram normalized windows overlap after mapping", retryable=False,
+            request_id=request_id,
+        )
+    return remapped
 
 
 def _validate_provider_range(

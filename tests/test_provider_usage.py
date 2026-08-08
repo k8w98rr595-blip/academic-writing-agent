@@ -95,6 +95,19 @@ def test_pangram_same_content_is_blocked_for_24_hours():
     assert "within 24 hours" in str(duplicate.value.detail)
 
 
+def test_pangram_failed_local_validation_still_blocks_same_content_for_24_hours():
+    first = reserve_provider_calls(OWNER, "Pangram", [_spec("detection", "failed-content-hash")])[
+        "detection"
+    ]
+    finalize_provider_call(first, final_status="failed", error_code="range_mismatch")
+
+    with pytest.raises(HTTPException) as duplicate:
+        reserve_provider_calls(OWNER, "Pangram", [_spec("detection", "failed-content-hash")])
+
+    assert duplicate.value.status_code == 409
+    assert "within 24 hours" in str(duplicate.value.detail)
+
+
 def test_pangram_daily_limit_counts_completed_calls(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("PANGRAM_HOURLY_WARNING", "1")
     monkeypatch.setenv("PANGRAM_HOURLY_HARD_LIMIT", "2")

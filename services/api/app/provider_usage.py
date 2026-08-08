@@ -169,13 +169,18 @@ def reserve_provider_calls(owner: str, provider: str, specs: list[ProviderCallSp
         reservations: dict[str, str] = {}
         for spec in specs:
             key_hash = _hash_key(f"{owner}:{provider}:{spec.operation}:{spec.idempotency_key}")
+            duplicate_statuses = {"reserved", "in_progress", "success", "outcome_unknown"}
+            if provider == "Pangram" and spec.operation == "detection":
+                # A Pangram task can complete and still fail local response/range
+                # validation. Treat that as already submitted for cost protection.
+                duplicate_statuses.add("failed")
             duplicate = db.scalar(
                 select(ProviderUsageEvent.id).where(
                     ProviderUsageEvent.owner_email == owner,
                     ProviderUsageEvent.provider == provider,
                     ProviderUsageEvent.operation == spec.operation,
                     ProviderUsageEvent.idempotency_hash == key_hash,
-                    ProviderUsageEvent.status.in_({"reserved", "in_progress", "success", "outcome_unknown"}),
+                    ProviderUsageEvent.status.in_(duplicate_statuses),
                     ProviderUsageEvent.created_at >= duplicate_cutoff,
                 )
             )

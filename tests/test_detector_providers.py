@@ -62,6 +62,17 @@ def _success_payload() -> dict:
     }
 
 
+def _normalized_success_payload() -> dict:
+    payload = _success_payload()
+    normalized = _text().replace("\n\n", "\n")
+    payload["text"] = normalized
+    for window in payload["windows"]:
+        start = normalized.index(window["text"])
+        window["start_index"] = start
+        window["end_index"] = start + len(window["text"])
+    return payload
+
+
 def _real_mode(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -146,6 +157,41 @@ def test_pangram_current_async_contract_maps_three_classifications(monkeypatch: 
     assert result["spans"][0]["paragraphId"] == "p1"
     assert result["spans"][0]["start"] == 0
     assert result["spans"][1]["confidence"] == 0.7
+
+
+def test_pangram_4_whitespace_normalization_maps_ranges_back_to_original(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    payload = _normalized_success_payload()
+    payload["windows"][2]["label"] = "AI-Assisted"
+    payload["windows"][2]["ai_assistance_score"] = 0.51
+    _real_mode(monkeypatch)
+    _install_success_transport(monkeypatch, payload)
+
+    result = asyncio.run(
+        run_detection(PARAGRAPHS, idempotency_key="normalized-contract", analyzed_version_id="version-1")
+    )
+
+    assert result["status"] == "success"
+    assert result["providerModelVersion"] == "4.0"
+    assert [span["paragraphId"] for span in result["spans"]] == ["p1", "p1", "p2"]
+    assert result["spans"][0]["start"] == 0
+    assert result["spans"][2]["start"] == 0
+    assert any("normalized whitespace" in warning for warning in result["warnings"])
+
+
+def test_pangram_4_content_normalization_still_fails_closed(monkeypatch: pytest.MonkeyPatch):
+    payload = _normalized_success_payload()
+    payload["text"] = payload["text"].replace("Alpha", "Omega", 1)
+    payload["windows"][0]["text"] = payload["windows"][0]["text"].replace("Alpha", "Omega", 1)
+
+    _real_mode(monkeypatch)
+    _install_success_transport(monkeypatch, payload)
+    result = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="unsafe-normalization"))
+
+    assert result["status"] == "failed"
+    assert result["error"]["code"] == "range_mismatch"
+    assert result["spans"] == []
 
 
 @pytest.mark.parametrize(
