@@ -55,7 +55,12 @@ No Pangram request was made. Production remains in Mock detector mode. This run 
 2. TOTP remains disabled. Password-only access is acceptable only for the current single-owner stage and blocks public or student rollout.
 3. The in-app browser could not independently capture and inspect the exported DOCX payload in this run.
 4. Mock percentages are deterministic workflow fixtures, not evidence of detector accuracy or authorship.
-5. The failed Production smoke run created during the expired Railway trial remains the latest workflow result until this documentation push triggers a fresh successful run.
+
+## Post-publication verification
+
+- GitHub Pages run `31241991415` completed successfully for documentation revision `9e13730`.
+- Production smoke run `31242050187` completed successfully for the same revision.
+- The final credential-free release checker reported the public repository, Pages, Mock detector, DeepSeek rewrite, password-only auth configuration, unauthenticated HTTP 401, frontend readiness, and production readiness all passing with no blockers.
 
 ## Owner-use conclusion
 
