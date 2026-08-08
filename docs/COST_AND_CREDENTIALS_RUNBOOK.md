@@ -1,12 +1,12 @@
 # Cost alerts and credential custody runbook
 
-Last implementation update: 2026-08-06 (Asia/Shanghai). Dashboard balances below are historical point-in-time observations and must be rechecked before any purchase decision. This document contains no passwords, tokens, API keys, TOTP seeds, session values, or recovery codes.
+Last implementation update: 2026-08-08 (Asia/Shanghai). Dashboard balances below are historical point-in-time observations and must be rechecked before any purchase decision. This document contains no passwords, tokens, API keys, TOTP seeds, session values, or recovery codes.
 
 ## Current account state
 
 | System | Verified state | Immediate action |
 |---|---|---|
-| Railway | `academic-writing-agent` is on a Limited Trial. Dashboard showed 22 days or USD 4.53 remaining; `api`, PostgreSQL, and Redis were online. | Do not rely on the trial for uninterrupted production. Decide whether to purchase a plan before the earlier of credit exhaustion or trial expiry. No purchase or payment change was made during acceptance. |
+| Railway | On 2026-08-08 the owner reported upgrading to Hobby after the trial expired. The project architecture then showed `api`, PostgreSQL, Redis, and their persistent volumes online. The exact billing balance was not read. | Keep a workspace usage alert enabled, review usage weekly, and verify the invoice/credit balance monthly. Do not enable a hard service-stopping limit without accepting the outage consequence. |
 | DeepSeek | After production acceptance, the Usage page showed CNY 19.83 balance, CNY 0.16 cumulative spend, 26 requests, and 33,255 tokens. The native warning was reopened and verified enabled at CNY 10. | Keep the CNY 10 threshold enabled and review it monthly. No recharge or payment change was made. |
 | Pangram | Production adapter is implemented, but production remains in Mock mode and no credential has been supplied for this integration. | Keep disabled until the applicable DPA/retention terms and budget controls are confirmed. |
 
@@ -31,7 +31,7 @@ Hard limits are intentionally higher than soft limits. A Railway hard limit can 
 - Duplicate-work protection: a matching hashed `owner + provider + operation + idempotency key` in reserved, successful, or outcome-unknown state is rejected for 24 hours. Only the hash is persisted.
 - Retry policy: initial attempt plus at most one retry, bounded exponential backoff, honor a short `Retry-After`, and never retry 400, 401, 402, 403, or 422. Pangram task creation is submitted only once because its official API does not document an idempotency header; only polling is retried.
 - Breaker behavior: pause new paid tasks for fifteen minutes. Login, view, export, immediate deletion, and already-generated reports remain available.
-- Review cadence: check dashboards daily while on the Railway trial; reconcile request count and charges weekly; review monthly limits and keys on the first day of each month.
+- Review cadence: check Railway and provider dashboards weekly; reconcile request count and charges weekly; review monthly limits, invoices, balances, and keys on the first day of each month. Increase to daily review after an alert or unexplained usage spike.
 
 The owner-only `GET /api/v1/provider-usage/summary` endpoint returns hour/day/week/month call counts, provider-reported input/output units, warnings, and breaker state. `provider_usage_events` retains operational metadata for 30 days and deliberately excludes paper text, prompts, responses, credentials, Session values, and raw idempotency keys. This is an operational safeguard, not a currency ledger; Railway, DeepSeek, and Pangram dashboards remain authoritative for charges and balances.
 

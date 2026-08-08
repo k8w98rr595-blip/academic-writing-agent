@@ -17,6 +17,7 @@ GitHub Pages uses the `/academic-writing-agent` base path and the repository Act
 
 The following checks have passed:
 
+- After the Railway trial expired and paused the deployment, the owner reported upgrading to Hobby on 2026-08-08. The `api`, PostgreSQL, Redis, and persistent volumes were observed online again. Post-recovery acceptance on revision `247ba3d` verified cleanup of the interrupted synthetic document, the detected-paragraph editor fix, deterministic Mock labeling, honest risk-increase display, fail-closed URL protection, a real Pro proposal with Flash validation, explicit patch acceptance, immediate stale evidence, re-analysis, desktop/mobile layout, empty-workspace cleanup, logout, API 200, unauthenticated 401, exact-origin CORS, HSTS, and zero browser warnings/errors. DOCX remained inconclusive because the in-app browser did not expose a completed download event. See [Production acceptance after Railway Hobby recovery — 2026-08-08](PRODUCTION_ACCEPTANCE_2026-08-08.md).
 - Pages and its static assets return HTTP 200, and `config.js` contains the live Railway URL rather than the placeholder.
 - The tested deployment includes hardening revision `56f6e21`; Pages run `29361860772` and credential-free Production smoke run `29361943400` passed for the pre-acceptance documentation revision `4660861`.
 - The credential-free production smoke workflow verifies Mock detector mode, DeepSeek rewrite mode, configured owner access, HTTP 401 for an unauthenticated document request, the Pages-to-API URL, and the exact GitHub Pages CORS origin.
