@@ -1102,6 +1102,22 @@
             "type": "integer",
             "title": "Hourlyhardlimit"
           },
+          "pangramHourlyWarning": {
+            "type": "integer",
+            "title": "Pangramhourlywarning"
+          },
+          "pangramHourlyHardLimit": {
+            "type": "integer",
+            "title": "Pangramhourlyhardlimit"
+          },
+          "pangramDailyHardLimit": {
+            "type": "integer",
+            "title": "Pangramdailyhardlimit"
+          },
+          "pangramMaxConcurrentCalls": {
+            "type": "integer",
+            "title": "Pangrammaxconcurrentcalls"
+          },
           "failureBreakerThreshold": {
             "type": "integer",
             "title": "Failurebreakerthreshold"
@@ -1119,6 +1135,10 @@
         "required": [
           "hourlyWarning",
           "hourlyHardLimit",
+          "pangramHourlyWarning",
+          "pangramHourlyHardLimit",
+          "pangramDailyHardLimit",
+          "pangramMaxConcurrentCalls",
           "failureBreakerThreshold",
           "breakerSeconds",
           "retentionDays"

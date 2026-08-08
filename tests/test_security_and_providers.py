@@ -33,8 +33,8 @@ def test_mock_detection_is_deterministic_and_ranges_are_valid():
     ]
     first = asyncio.run(run_detection(paragraphs))
     second = asyncio.run(run_detection(paragraphs))
-    assert {key: value for key, value in first.items() if key != "analyzedAt"} == {
-        key: value for key, value in second.items() if key != "analyzedAt"
+    assert {key: value for key, value in first.items() if key not in {"analyzedAt", "detectedAt"}} == {
+        key: value for key, value in second.items() if key not in {"analyzedAt", "detectedAt"}
     }
     assert first["isMock"] is True
     for span in first["spans"]:
@@ -75,10 +75,10 @@ def test_real_provider_modes_fail_closed_without_credentials(monkeypatch: pytest
     monkeypatch.setenv("DETECTOR_MODE", "pangram")
     monkeypatch.delenv("PANGRAM_API_KEY", raising=False)
     get_settings.cache_clear()
-    with pytest.raises(HTTPException) as detector_error:
-        asyncio.run(run_detection([{"id": "p", "text": "Evidence must be checked."}]))
-    assert detector_error.value.status_code == 503
+    with pytest.raises(RuntimeError, match="PANGRAM_API_KEY"):
+        get_settings()
 
+    monkeypatch.setenv("DETECTOR_MODE", "mock")
     monkeypatch.setenv("REWRITE_MODE", "deepseek")
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     get_settings.cache_clear()
@@ -275,10 +275,15 @@ def test_invalid_provider_payload_becomes_controlled_unavailable_result(monkeypa
     async def invalid_post(url: str, **__: object) -> httpx.Response:
         return httpx.Response(202, json={"not_task_id": "missing"}, request=httpx.Request("POST", url))
 
+    async def model_catalog(url: str, **__: object) -> httpx.Response:
+        return httpx.Response(200, json={"models": ["pangram-4"]}, request=httpx.Request("GET", url))
+
     monkeypatch.setenv("DETECTOR_MODE", "pangram")
     monkeypatch.setenv("PANGRAM_API_KEY", "configured-for-contract-test")
+    monkeypatch.setenv("PANGRAM_PAID_CALLS_ENABLED", "1")
     monkeypatch.setenv("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", "1")
     monkeypatch.setattr(detector_module, "post_json_with_retry", invalid_post)
+    monkeypatch.setattr(detector_module, "get_json_with_retry", model_catalog)
     get_settings.cache_clear()
     result = asyncio.run(run_detection([{"id": "p", "text": "Evidence must be checked."}]))
     assert result["combinedRiskPercent"] is None
@@ -286,6 +291,7 @@ def test_invalid_provider_payload_becomes_controlled_unavailable_result(monkeypa
     assert result["error"]["code"] == "invalid_response"
     monkeypatch.setenv("DETECTOR_MODE", "mock")
     monkeypatch.setenv("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", "0")
+    monkeypatch.setenv("PANGRAM_PAID_CALLS_ENABLED", "0")
     get_settings.cache_clear()
 
 

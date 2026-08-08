@@ -221,6 +221,7 @@ mark.evidence:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 .stale-notice strong { color: #594015; font-size: 10px; }
 .stale-notice span { color: #786746; font-size: 9px; }
 .stale-notice button { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--blue); font-size: 9px; text-decoration: underline; }
+.detection-cost-note { margin: 14px 0 0; padding: 10px 12px; border-left: 3px solid #d7a342; background: #fff9ee; color: #6f562b; font-size: 9px; line-height: 1.55; }
 .inspector-disclaimer { margin: 16px 0 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
 .compose-intro, .versions-intro { display: grid; gap: 8px; margin-bottom: 22px; color: var(--muted); }
 .compose-intro svg, .versions-intro svg { color: var(--accent); }

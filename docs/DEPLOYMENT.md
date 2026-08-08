@@ -21,12 +21,13 @@ Create a service from the root Dockerfile, attach a persistent volume at `/data`
 - `OWNER_EMAIL`, `OWNER_PASSWORD_HASH`, `REQUIRE_TOTP=0`
 - `COOKIE_SECURE=1`
 - `DETECTOR_MODE=mock`
+- `PANGRAM_API_BASE_URL=https://text.external-api.pangram.com`, `PANGRAM_MODEL=pangram-4`, `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=0`, and `PANGRAM_PAID_CALLS_ENABLED=0`
 - `REWRITE_MODE=deepseek`, `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL=deepseek-v4-pro`, and `DEEPSEEK_VALIDATOR_MODEL=deepseek-v4-flash` for the owner-only production rewrite path
 - `PAID_CALL_HOURLY_WARNING=10`, `PAID_CALL_HOURLY_HARD_LIMIT=20`, `PROVIDER_FAILURE_BREAKER_THRESHOLD=5`, `PROVIDER_BREAKER_SECONDS=900`, and `PROVIDER_USAGE_RETENTION_DAYS=30`
 
 Do not deploy with a local bootstrap or handoff file. The owner-approved current stage keeps TOTP disabled; do not create, read, or alter TOTP material during routine deployment. Generate a replacement password verifier with `python scripts/hash_owner_password.py`, store the plaintext only in the owner's password manager, and put only the Argon2id verifier in Railway `OWNER_PASSWORD_HASH`.
 
-Real Pangram deployment additionally requires the server-only variables documented in [Provider setup](PROVIDER_SETUP.md). `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=1` is a legal/operational gate, not a technical default; keep it at `0` until Pangram's applicable data terms are confirmed. The official endpoint host is enforced in every real-provider environment to prevent redirecting the key to an arbitrary server.
+Real Pangram 4 deployment additionally requires the server-only variables documented in [Provider setup](PROVIDER_SETUP.md). `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=1` and `PANGRAM_PAID_CALLS_ENABLED=1` are independent legal/operational gates, not technical defaults; keep both at `0` until the applicable data terms and one-call budget are confirmed. The official endpoint host and `pangram-4` selector are enforced, and the adapter verifies the selector with `GET /models` before creating a task. See [Pangram 4 deployment readiness](PANGRAM_4_DEPLOYMENT_READINESS.md).
 
 ## Managed services
 

@@ -11,6 +11,7 @@ export type EvidenceSpan = {
 
 export type PangramDetectionResult = {
   provider: "Pangram" | "Mock Pangram";
+  providerModel: string | null;
   providerModelVersion: string | null;
   isMock: boolean;
   status: "success" | "failed";
@@ -23,10 +24,12 @@ export type PangramDetectionResult = {
   combinedRiskPercent: number | null;
   spans: EvidenceSpan[];
   requestId: string | null;
+  taskReference?: string | null;
   warnings: string[];
   disclaimer: string;
   analyzedVersionId: string;
   analyzedAt: string;
+  detectedAt?: string;
   latencyMs: number;
   riskComparison?: {
     beforePercent: number;

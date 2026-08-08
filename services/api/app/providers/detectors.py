@@ -33,12 +33,20 @@ FORMULAIC = (
 
 Classification = Literal["ai_generated", "ai_assisted", "human"]
 CONFIDENCE_VALUES = {"high": 0.9, "medium": 0.7, "low": 0.5}
-PREDICTION_VALUES = {"ai", "ai-assisted", "human", "mixed"}
+PANGRAM_4_PREDICTION_VALUES = {"ai", "human", "mixed"}
+PANGRAM_4_LABELS: dict[str, Classification] = {
+    "AI-Generated": "ai_generated",
+    "AI-Assisted": "ai_assisted",
+    "Human Written": "human",
+}
 MAX_PROVIDER_WINDOWS = 20_000
+MAX_PROVIDER_MODELS = 64
+MAX_PROVIDER_RESPONSE_BYTES = 16 * 1024 * 1024
 FRACTION_SUM_TOLERANCE = 0.02
 SAFE_TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 SAFE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 SAFE_LABEL = re.compile(r"^[A-Za-z][A-Za-z -]{0,63}$")
+SAFE_MODEL_SELECTOR = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 SAFE_STAGE = re.compile(r"^STAGE_[A-Z_]{1,40}$")
 DISCLAIMER = (
     "This is a probabilistic AI writing risk signal for internal review, not proof of authorship "
@@ -59,6 +67,7 @@ class ProviderSpan:
 @dataclass
 class ProviderResult:
     provider: str
+    provider_model: str | None
     provider_model_version: str | None
     prediction: str | None
     fraction_ai: float | None
@@ -141,7 +150,8 @@ class MockPangramDetectorProvider:
         request_id = "mock-" + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()[:16]
         return ProviderResult(
             provider=self.name,
-            provider_model_version="mock-pangram-v3",
+            provider_model="mock",
+            provider_model_version="mock-pangram-4-shape-v1",
             prediction=prediction,
             fraction_ai=fraction_ai,
             fraction_ai_assisted=fraction_assisted,
@@ -164,6 +174,10 @@ class PangramDetectorProvider:
             raise DetectorConfigurationError("Pangram is not configured")
         if not settings.detector_data_processing_acknowledged:
             raise DetectorConfigurationError("Real detector data processing terms have not been acknowledged")
+        if not settings.pangram_paid_calls_enabled:
+            raise DetectorConfigurationError("Real Pangram paid calls are not enabled")
+        if settings.pangram_model != "pangram-4":
+            raise DetectorConfigurationError("Paperlight requires the Pangram 4 model selector")
 
     async def detect(self, paragraphs: list[dict], idempotency_key: str) -> ProviderResult:
         self.validate_configuration()
@@ -173,13 +187,19 @@ class PangramDetectorProvider:
         base_url = settings.pangram_api_url.rstrip("/")
         headers = {"x-api-key": settings.pangram_api_key, "Content-Type": "application/json"}
 
+        await _require_available_model(base_url, headers, settings.pangram_model)
+
         # Pangram documents no idempotency key for task creation. Never retry this
         # potentially billable POST after a timeout or an indeterminate response.
         try:
             response = await post_json_with_retry(
                 f"{base_url}/task",
                 headers=headers,
-                payload={"text": text, "public_dashboard_link": False},
+                payload={
+                    "text": text,
+                    "model": settings.pangram_model,
+                    "public_dashboard_link": False,
+                },
                 timeout_seconds=settings.provider_timeout_seconds,
                 attempts=1,
             )
@@ -268,6 +288,13 @@ class PangramDetectorProvider:
                 request_id=task_id,
             )
         version = _validated_string(completed.get("version"), "Pangram version", SAFE_VERSION, task_id)
+        if not version.startswith("4."):
+            raise DetectorProviderError(
+                "wrong_model_version",
+                "Pangram returned a result that is not identified as Pangram 4",
+                retryable=False,
+                request_id=task_id,
+            )
         prediction = _validated_prediction(completed.get("prediction_short"), task_id)
         windows = _validated_windows(text, completed.get("windows"), task_id)
         spans = _map_windows_to_paragraphs(paragraphs, windows, task_id)
@@ -279,6 +306,7 @@ class PangramDetectorProvider:
             warnings.append("Pangram reported document-level risk without a marked non-human segment.")
         return ProviderResult(
             provider=self.name,
+            provider_model=settings.pangram_model,
             provider_model_version=version,
             prediction=prediction,
             fraction_ai=fraction_ai,
@@ -286,7 +314,7 @@ class PangramDetectorProvider:
             fraction_human=fraction_human,
             qualifying_words=word_count(text),
             spans=spans,
-            request_id=task_id,
+            request_id=_safe_task_reference(task_id),
             warnings=warnings,
             is_mock=False,
             latency_ms=round((time.perf_counter() - started) * 1000),
@@ -295,6 +323,19 @@ class PangramDetectorProvider:
 
 def _document_text(paragraphs: list[dict]) -> str:
     return "\n\n".join(str(item["text"]) for item in paragraphs)
+
+
+def detection_content_fingerprint(paragraphs: list[dict], model: str) -> str:
+    """Return a content-derived key without persisting or logging the paper text."""
+
+    material = f"{model}\0{_document_text(paragraphs)}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _safe_task_reference(task_id: str | None) -> str | None:
+    if not task_id:
+        return None
+    return "sha256:" + hashlib.sha256(task_id.encode("utf-8")).hexdigest()
 
 
 def _prediction_from_fractions(ai: float, assisted: float, human: float) -> str:
@@ -354,7 +395,7 @@ def _validated_string(
 
 
 def _validated_prediction(value: Any, request_id: str) -> str:
-    if not isinstance(value, str) or len(value) > 32 or value.lower() not in PREDICTION_VALUES:
+    if not isinstance(value, str) or len(value) > 32 or value.lower() not in PANGRAM_4_PREDICTION_VALUES:
         raise DetectorProviderError(
             "invalid_response", "Pangram prediction_short is invalid", retryable=False, request_id=request_id
         )
@@ -363,16 +404,12 @@ def _validated_prediction(value: Any, request_id: str) -> str:
 
 def _classification_from_label(value: Any, request_id: str) -> Classification:
     label = _validated_string(value, "Pangram window label", SAFE_LABEL, request_id)
-    normalized = label.lower().replace(" ", "-")
-    if "human" in normalized and "ai" not in normalized:
-        return "human"
-    if "ai-assisted" in normalized:
-        return "ai_assisted"
-    if "ai-generated" in normalized or normalized == "ai":
-        return "ai_generated"
-    raise DetectorProviderError(
-        "invalid_response", "Pangram window label is unsupported", retryable=False, request_id=request_id
-    )
+    try:
+        return PANGRAM_4_LABELS[label]
+    except KeyError as error:
+        raise DetectorProviderError(
+            "invalid_response", "Pangram window label is unsupported", retryable=False, request_id=request_id
+        ) from error
 
 
 def _validated_windows(text: str, value: Any, request_id: str) -> list[dict[str, Any]]:
@@ -402,6 +439,12 @@ def _validated_windows(text: str, value: Any, request_id: str) -> list[dict[str,
             raise DetectorProviderError(
                 "invalid_response", "Pangram window confidence is invalid", retryable=False, request_id=request_id
             )
+        if not isinstance(row.get("is_humanized"), bool):
+            raise DetectorProviderError(
+                "invalid_response", "Pangram 4 window is_humanized is invalid", retryable=False,
+                request_id=request_id,
+            )
+        _fraction(row.get("humanizer_score"), "Pangram humanizer_score", request_id)
         windows.append(
             {
                 "start": start,
@@ -469,6 +512,10 @@ def _map_windows_to_paragraphs(
 
 
 def _json_object(provider: str, response: httpx.Response) -> dict[str, Any]:
+    if len(response.content) > MAX_PROVIDER_RESPONSE_BYTES:
+        raise DetectorProviderError(
+            "invalid_response", f"{provider} response exceeded the allowed size", retryable=False
+        )
     try:
         payload = response.json()
     except ValueError as error:
@@ -480,6 +527,46 @@ def _json_object(provider: str, response: httpx.Response) -> dict[str, Any]:
             "invalid_response", f"{provider} response must be an object", retryable=False
         )
     return payload
+
+
+async def _require_available_model(base_url: str, headers: dict[str, str], model: str) -> None:
+    """Discover entitlement before any potentially billable detection submission."""
+
+    if not SAFE_MODEL_SELECTOR.fullmatch(model):
+        raise DetectorConfigurationError("Pangram model selector has an invalid format")
+    try:
+        response = await get_json_with_retry(
+            f"{base_url}/models",
+            headers={"x-api-key": headers["x-api-key"]},
+            timeout_seconds=get_settings().provider_timeout_seconds,
+            attempts=2,
+        )
+    except (httpx.TimeoutException, httpx.HTTPError) as error:
+        raise DetectorProviderError(
+            "model_discovery_unavailable",
+            "Pangram model discovery is temporarily unavailable; no detection task was submitted",
+            retryable=True,
+        ) from error
+    _raise_for_provider_status("Pangram", response)
+    payload = _json_object("Pangram", response)
+    models = payload.get("models")
+    if not isinstance(models, list) or not 1 <= len(models) <= MAX_PROVIDER_MODELS:
+        raise DetectorProviderError(
+            "invalid_response", "Pangram returned an invalid model catalog", retryable=False
+        )
+    validated: list[str] = []
+    for value in models:
+        if not isinstance(value, str) or not SAFE_MODEL_SELECTOR.fullmatch(value):
+            raise DetectorProviderError(
+                "invalid_response", "Pangram returned an invalid model selector", retryable=False
+            )
+        validated.append(value)
+    if model not in validated:
+        raise DetectorProviderError(
+            "model_not_available",
+            "Pangram 4 is not enabled for this API key; no detection task was submitted",
+            retryable=False,
+        )
 
 
 def _raise_for_provider_status(provider: str, response: httpx.Response, request_id: str | None = None) -> None:
@@ -526,6 +613,7 @@ async def _call_provider(
     except DetectorProviderError as error:
         return ProviderResult(
             provider=detector.name,
+            provider_model=get_settings().pangram_model,
             provider_model_version=None,
             prediction=None,
             fraction_ai=None,
@@ -533,7 +621,7 @@ async def _call_provider(
             fraction_human=None,
             qualifying_words=sum(word_count(item["text"]) for item in paragraphs),
             spans=[],
-            request_id=error.request_id,
+            request_id=_safe_task_reference(error.request_id),
             warnings=[],
             is_mock=False,
             latency_ms=round((time.perf_counter() - started) * 1000),
@@ -551,6 +639,7 @@ def _unexpected_provider_failure(
 ) -> ProviderResult:
     return ProviderResult(
         provider=provider,
+        provider_model=get_settings().pangram_model if provider == "Pangram" else None,
         provider_model_version=None,
         prediction=None,
         fraction_ai=None,
@@ -584,10 +673,12 @@ def _serialize_result(result: ProviderResult, analyzed_version_id: str) -> dict[
         else None
     )
     warnings = list(result.warnings)
+    analyzed_at = datetime.now(timezone.utc).isoformat()
     if not successful:
         warnings.append("The detector was unavailable, so no risk percentage or highlight was saved.")
     return {
         "provider": result.provider,
+        "providerModel": result.provider_model,
         "providerModelVersion": result.provider_model_version,
         "isMock": result.is_mock,
         "status": result.status,
@@ -610,10 +701,12 @@ def _serialize_result(result: ProviderResult, analyzed_version_id: str) -> dict[
             for span in result.spans
         ],
         "requestId": result.request_id,
+        "taskReference": result.request_id,
         "warnings": warnings,
         "disclaimer": DISCLAIMER,
         "analyzedVersionId": analyzed_version_id,
-        "analyzedAt": datetime.now(timezone.utc).isoformat(),
+        "analyzedAt": analyzed_at,
+        "detectedAt": analyzed_at,
         "latencyMs": result.latency_ms,
     }
 

@@ -18,7 +18,9 @@ os.environ.update(
         "REQUIRE_TOTP": "0",
         "DETECTOR_MODE": "mock",
         "DETECTOR_DATA_PROCESSING_ACKNOWLEDGED": "0",
-        "PANGRAM_API_URL": "https://text.external-api.pangram.com",
+        "PANGRAM_API_BASE_URL": "https://text.external-api.pangram.com",
+        "PANGRAM_MODEL": "pangram-4",
+        "PANGRAM_PAID_CALLS_ENABLED": "0",
         "REWRITE_MODE": "mock",
         "ALLOWED_ORIGINS": "http://testserver",
     }

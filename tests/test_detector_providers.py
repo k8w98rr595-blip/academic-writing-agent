@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from types import SimpleNamespace
 
 import httpx
 import pytest
-from fastapi import HTTPException
 
 from services.api.app.config import get_settings
 from services.api.app.providers import detectors as detector_module
@@ -37,6 +37,8 @@ def _window(fragment: str, label: str, score: float, confidence: str = "High") -
         "confidence": confidence,
         "start_index": start,
         "end_index": start + len(fragment),
+        "is_humanized": False,
+        "humanizer_score": 0.0,
     }
 
 
@@ -47,24 +49,32 @@ def _success_payload() -> dict:
     return {
         "stage": "STAGE_SUCCESS",
         "text": _text(),
-        "version": "3.0",
+        "version": "4.0",
         "prediction_short": "Mixed",
         "fraction_ai": 0.5,
         "fraction_ai_assisted": 0.2,
         "fraction_human": 0.3,
         "windows": [
             _window(first, "AI-Generated", 0.91),
-            _window(second, "Moderately AI-Assisted", 0.58, "Medium"),
-            _window(third, "Human-Written", 0.04, "High"),
+            _window(second, "AI-Assisted", 0.58, "Medium"),
+            _window(third, "Human Written", 0.04, "High"),
         ],
     }
 
 
-def _real_mode(monkeypatch: pytest.MonkeyPatch, *, key: bool = True, acknowledged: bool = True) -> None:
+def _real_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    key: bool = True,
+    acknowledged: bool = True,
+    paid_calls: bool = True,
+) -> None:
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("DETECTOR_MODE", "pangram")
-    monkeypatch.setenv("PANGRAM_API_URL", "https://text.external-api.pangram.com")
+    monkeypatch.setenv("PANGRAM_API_BASE_URL", "https://text.external-api.pangram.com")
     monkeypatch.setenv("PANGRAM_API_KEY", "synthetic-contract-value" if key else "")
+    monkeypatch.setenv("PANGRAM_MODEL", "pangram-4")
+    monkeypatch.setenv("PANGRAM_PAID_CALLS_ENABLED", "1" if paid_calls else "0")
     monkeypatch.setenv("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", "1" if acknowledged else "0")
     get_settings.cache_clear()
 
@@ -76,15 +86,25 @@ def _install_success_transport(monkeypatch: pytest.MonkeyPatch, payload: dict, c
         assert headers["x-api-key"]
         assert "Idempotency-Key" not in headers
         assert attempts == 1
-        assert payload == {"text": _text(), "public_dashboard_link": False}
+        assert payload == {"text": _text(), "model": "pangram-4", "public_dashboard_link": False}
         return _response("POST", url, 202, {"task_id": "task-contract-1"})
 
     async def fake_get(url: str, **_: object) -> httpx.Response:
         if calls is not None:
             calls.append(("GET", url))
+        if url.endswith("/models"):
+            return _response("GET", url, 200, {"models": ["default", "pangram-4"]})
         return _response("GET", url, 200, payload)
 
     monkeypatch.setattr(detector_module, "post_json_with_retry", fake_post)
+    monkeypatch.setattr(detector_module, "get_json_with_retry", fake_get)
+
+
+def _install_model_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get(url: str, **_: object) -> httpx.Response:
+        assert url.endswith("/models")
+        return _response("GET", url, 200, {"models": ["default", "pangram-4"]})
+
     monkeypatch.setattr(detector_module, "get_json_with_retry", fake_get)
 
 
@@ -104,12 +124,16 @@ def test_pangram_current_async_contract_maps_three_classifications(monkeypatch: 
     )
 
     assert calls == [
+        ("GET", "https://text.external-api.pangram.com/models"),
         ("POST", "https://text.external-api.pangram.com/task"),
         ("GET", "https://text.external-api.pangram.com/task/task-contract-1"),
     ]
     assert result["provider"] == "Pangram"
-    assert result["providerModelVersion"] == "3.0"
-    assert result["requestId"] == "task-contract-1"
+    assert result["providerModel"] == "pangram-4"
+    assert result["providerModelVersion"] == "4.0"
+    assert result["requestId"].startswith("sha256:")
+    assert result["taskReference"] == result["requestId"]
+    assert "task-contract-1" not in str(result)
     assert result["prediction"] == "Mixed"
     assert result["aiGeneratedPercent"] == 50.0
     assert result["aiAssistedPercent"] == 20.0
@@ -117,6 +141,7 @@ def test_pangram_current_async_contract_maps_three_classifications(monkeypatch: 
     assert result["combinedRiskPercent"] == 70.0
     assert result["analyzedVersionId"] == "version-1"
     assert result["analyzedAt"]
+    assert result["detectedAt"] == result["analyzedAt"]
     assert [span["classification"] for span in result["spans"]] == ["ai_generated", "ai_assisted"]
     assert result["spans"][0]["paragraphId"] == "p1"
     assert result["spans"][0]["start"] == 0
@@ -145,6 +170,7 @@ def test_pangram_submit_errors_are_sanitized(
         return _response("POST", url, status_code, {"secretDetail": "must not escape"})
 
     _real_mode(monkeypatch)
+    _install_model_catalog(monkeypatch)
     monkeypatch.setattr(detector_module, "post_json_with_retry", fake_post)
     result = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="status-contract"))
     assert calls == 1
@@ -165,6 +191,7 @@ def test_pangram_ambiguous_submit_timeout_is_never_repeated(monkeypatch: pytest.
         raise httpx.ReadTimeout("synthetic timeout", request=httpx.Request("POST", url))
 
     _real_mode(monkeypatch)
+    _install_model_catalog(monkeypatch)
     monkeypatch.setattr(detector_module, "post_json_with_retry", fake_post)
     result = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="timeout-contract"))
     assert calls == 1
@@ -180,6 +207,8 @@ def test_pangram_invalid_json_fails_closed(monkeypatch: pytest.MonkeyPatch):
         return _response("POST", url, 202, {"task_id": "task-json"})
 
     async def fake_get(url: str, **_: object) -> httpx.Response:
+        if url.endswith("/models"):
+            return _response("GET", url, 200, {"models": ["default", "pangram-4"]})
         return httpx.Response(200, content=b"not-json", request=httpx.Request("GET", url))
 
     _real_mode(monkeypatch)
@@ -187,6 +216,18 @@ def test_pangram_invalid_json_fails_closed(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(detector_module, "get_json_with_retry", fake_get)
     result = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="json-contract"))
     assert result["combinedRiskPercent"] is None
+    assert result["error"]["code"] == "invalid_response"
+
+
+def test_pangram_oversized_response_fails_before_json_parsing(monkeypatch: pytest.MonkeyPatch):
+    async def fake_get(url: str, **_: object) -> httpx.Response:
+        return httpx.Response(200, content=b"{}", request=httpx.Request("GET", url))
+
+    _real_mode(monkeypatch)
+    monkeypatch.setattr(detector_module, "MAX_PROVIDER_RESPONSE_BYTES", 1)
+    monkeypatch.setattr(detector_module, "get_json_with_retry", fake_get)
+    result = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="oversized-provider-response"))
+    assert result["status"] == "failed"
     assert result["error"]["code"] == "invalid_response"
 
 
@@ -200,7 +241,10 @@ def test_pangram_invalid_json_fails_closed(monkeypatch: pytest.MonkeyPatch):
         (lambda payload: payload["windows"][0].update(text="mismatched window"), "range_mismatch"),
         (lambda payload: payload["windows"][0].update(confidence="Certain"), "invalid_response"),
         (lambda payload: payload["windows"][0].update(label="Unknown"), "invalid_response"),
+        (lambda payload: payload["windows"][0].update(is_humanized="yes"), "invalid_response"),
+        (lambda payload: payload["windows"][0].update(humanizer_score=2), "invalid_response"),
         (lambda payload: payload.update(version="../unsafe"), "invalid_response"),
+        (lambda payload: payload.update(version="3.0"), "wrong_model_version"),
         (lambda payload: payload.update(prediction_short="Guaranteed AI"), "invalid_response"),
     ],
 )
@@ -228,26 +272,105 @@ def test_pangram_rejects_too_many_windows(monkeypatch: pytest.MonkeyPatch):
     assert result["spans"] == []
 
 
+def test_pangram_model_catalog_must_enable_pangram_4_before_submission(monkeypatch: pytest.MonkeyPatch):
+    posts = 0
+
+    async def fake_get(url: str, **_: object) -> httpx.Response:
+        return _response("GET", url, 200, {"models": ["default"]})
+
+    async def fake_post(url: str, **_: object) -> httpx.Response:
+        nonlocal posts
+        posts += 1
+        return _response("POST", url, 202, {"task_id": "must-not-exist"})
+
+    _real_mode(monkeypatch)
+    monkeypatch.setattr(detector_module, "get_json_with_retry", fake_get)
+    monkeypatch.setattr(detector_module, "post_json_with_retry", fake_post)
+    result = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="model-entitlement"))
+    assert posts == 0
+    assert result["error"]["code"] == "model_not_available"
+
+
+def test_pangram_missing_task_id_fails_closed(monkeypatch: pytest.MonkeyPatch):
+    async def fake_post(url: str, **_: object) -> httpx.Response:
+        return _response("POST", url, 202, {"stage": "STAGE_PREPROCESSING"})
+
+    _real_mode(monkeypatch)
+    _install_model_catalog(monkeypatch)
+    monkeypatch.setattr(detector_module, "post_json_with_retry", fake_post)
+    result = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="missing-task"))
+    assert result["error"]["code"] == "invalid_response"
+    assert result["combinedRiskPercent"] is None
+
+
+def test_pangram_permanent_pending_stops_without_resubmission(monkeypatch: pytest.MonkeyPatch):
+    posts = 0
+    monotonic_values = iter([0.0, 0.1, 1.1])
+
+    async def fake_post(url: str, **_: object) -> httpx.Response:
+        nonlocal posts
+        posts += 1
+        return _response("POST", url, 202, {"task_id": "task-pending"})
+
+    async def fake_get(url: str, **_: object) -> httpx.Response:
+        if url.endswith("/models"):
+            return _response("GET", url, 200, {"models": ["pangram-4"]})
+        return _response("GET", url, 200, {"task_id": "task-pending", "stage": "STAGE_PREPROCESSING"})
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    _real_mode(monkeypatch)
+    monkeypatch.setenv("PANGRAM_MAX_POLL_SECONDS", "1")
+    get_settings.cache_clear()
+    monkeypatch.setattr(detector_module, "post_json_with_retry", fake_post)
+    monkeypatch.setattr(detector_module, "get_json_with_retry", fake_get)
+    monkeypatch.setattr(
+        detector_module,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(monotonic_values), perf_counter=lambda: 0.0),
+    )
+    monkeypatch.setattr(detector_module.asyncio, "sleep", no_sleep)
+    result = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="pending-task"))
+    assert posts == 1
+    assert result["error"]["code"] == "polling_timeout"
+    assert result["requestId"].startswith("sha256:")
+    assert "task-pending" not in str(result)
+
+
 def test_pangram_requires_api_key(monkeypatch: pytest.MonkeyPatch):
     _real_mode(monkeypatch, key=False)
-    with pytest.raises(HTTPException) as caught:
-        asyncio.run(run_detection(PARAGRAPHS, idempotency_key="missing-key"))
-    assert caught.value.status_code == 503
-    assert "not configured" in str(caught.value.detail)
+    with pytest.raises(RuntimeError, match="PANGRAM_API_KEY"):
+        get_settings()
 
 
 def test_pangram_requires_data_processing_acknowledgement(monkeypatch: pytest.MonkeyPatch):
     _real_mode(monkeypatch, acknowledged=False)
-    with pytest.raises(HTTPException) as caught:
-        asyncio.run(run_detection(PARAGRAPHS, idempotency_key="missing-terms"))
-    assert caught.value.status_code == 503
-    assert "not been acknowledged" in str(caught.value.detail)
+    with pytest.raises(RuntimeError, match="data-processing"):
+        get_settings()
+
+
+def test_pangram_requires_explicit_paid_call_switch(monkeypatch: pytest.MonkeyPatch):
+    _real_mode(monkeypatch, paid_calls=False)
+    with pytest.raises(RuntimeError, match="PANGRAM_PAID_CALLS_ENABLED"):
+        get_settings()
+
+
+def test_pangram_rejects_non_v4_model_selector(monkeypatch: pytest.MonkeyPatch):
+    _real_mode(monkeypatch)
+    monkeypatch.setenv("PANGRAM_MODEL", "default")
+    get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="pangram-4"):
+        get_settings()
 
 
 def test_pangram_rejects_untrusted_api_host_in_every_environment(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("DETECTOR_MODE", "pangram")
-    monkeypatch.setenv("PANGRAM_API_URL", "https://attacker.invalid")
+    monkeypatch.setenv("PANGRAM_API_BASE_URL", "https://attacker.invalid")
+    monkeypatch.setenv("PANGRAM_API_KEY", "synthetic-contract-value")
+    monkeypatch.setenv("PANGRAM_PAID_CALLS_ENABLED", "1")
+    monkeypatch.setenv("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", "1")
     get_settings.cache_clear()
     with pytest.raises(RuntimeError, match="official HTTPS API host"):
         get_settings()
@@ -258,8 +381,8 @@ def test_mock_pangram_is_deterministic_and_uses_single_provider_shape(monkeypatc
     get_settings.cache_clear()
     first = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="same-analysis", analyzed_version_id="v1"))
     second = asyncio.run(run_detection(PARAGRAPHS, idempotency_key="same-analysis", analyzed_version_id="v1"))
-    assert {key: value for key, value in first.items() if key != "analyzedAt"} == {
-        key: value for key, value in second.items() if key != "analyzedAt"
+    assert {key: value for key, value in first.items() if key not in {"analyzedAt", "detectedAt"}} == {
+        key: value for key, value in second.items() if key not in {"analyzedAt", "detectedAt"}
     }
     assert first["provider"] == "Mock Pangram"
     assert first["isMock"] is True

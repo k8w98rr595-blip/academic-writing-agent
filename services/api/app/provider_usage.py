@@ -81,6 +81,7 @@ def reserve_provider_calls(owner: str, provider: str, specs: list[ProviderCallSp
     settings = get_settings()
     now = utcnow()
     one_hour_ago = now - timedelta(hours=1)
+    one_day_ago = now - timedelta(days=1)
     duplicate_cutoff = now - timedelta(hours=24)
     retention_cutoff = now - timedelta(days=settings.provider_usage_retention_days)
     with session_scope() as db:
@@ -96,6 +97,59 @@ def reserve_provider_calls(owner: str, provider: str, specs: list[ProviderCallSp
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Paid provider calls are temporarily paused after repeated failures",
             )
+        if provider == "Pangram":
+            active_cutoff = now - timedelta(seconds=settings.pangram_reservation_ttl_seconds)
+            active_count = int(
+                db.scalar(
+                    select(func.count(ProviderUsageEvent.id)).where(
+                        ProviderUsageEvent.owner_email == owner,
+                        ProviderUsageEvent.provider == "Pangram",
+                        ProviderUsageEvent.operation == "detection",
+                        ProviderUsageEvent.status.in_({"reserved", "in_progress"}),
+                        ProviderUsageEvent.created_at >= active_cutoff,
+                    )
+                )
+                or 0
+            )
+            if active_count + len(specs) > settings.pangram_max_concurrent_calls:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A Pangram detection is already in progress",
+                )
+            pangram_hourly_count = int(
+                db.scalar(
+                    select(func.count(ProviderUsageEvent.id)).where(
+                        ProviderUsageEvent.owner_email == owner,
+                        ProviderUsageEvent.provider == "Pangram",
+                        ProviderUsageEvent.operation == "detection",
+                        ProviderUsageEvent.status.in_(COUNTED_STATUSES),
+                        ProviderUsageEvent.created_at >= one_hour_ago,
+                    )
+                )
+                or 0
+            )
+            if pangram_hourly_count + len(specs) > settings.pangram_hourly_hard_limit:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Hourly Pangram detection limit reached",
+                )
+            pangram_daily_count = int(
+                db.scalar(
+                    select(func.count(ProviderUsageEvent.id)).where(
+                        ProviderUsageEvent.owner_email == owner,
+                        ProviderUsageEvent.provider == "Pangram",
+                        ProviderUsageEvent.operation == "detection",
+                        ProviderUsageEvent.status.in_(COUNTED_STATUSES),
+                        ProviderUsageEvent.created_at >= one_day_ago,
+                    )
+                )
+                or 0
+            )
+            if pangram_daily_count + len(specs) > settings.pangram_daily_hard_limit:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Daily Pangram detection limit reached",
+                )
         hourly_count = int(
             db.scalar(
                 select(func.count(ProviderUsageEvent.id)).where(
@@ -128,7 +182,11 @@ def reserve_provider_calls(owner: str, provider: str, specs: list[ProviderCallSp
             if duplicate:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="A matching paid provider call is already recorded",
+                    detail=(
+                        "The same content was already submitted to Pangram within 24 hours"
+                        if provider == "Pangram" and spec.operation == "detection"
+                        else "A matching paid provider call is already recorded"
+                    ),
                 )
             event = ProviderUsageEvent(
                 id=f"usage_{secrets.token_hex(12)}",
@@ -223,6 +281,20 @@ def provider_usage_summary(db: Session, owner: str) -> dict:
     warnings: list[str] = []
     if periods["hour"]["calls"] >= settings.paid_call_hourly_warning:
         warnings.append("Hourly paid-provider usage has reached the configured warning threshold.")
+    pangram_hourly_calls = int(
+        db.scalar(
+            select(func.count(ProviderUsageEvent.id)).where(
+                ProviderUsageEvent.owner_email == owner,
+                ProviderUsageEvent.provider == "Pangram",
+                ProviderUsageEvent.operation == "detection",
+                ProviderUsageEvent.status.in_(COUNTED_STATUSES),
+                ProviderUsageEvent.created_at >= now - timedelta(hours=1),
+            )
+        )
+        or 0
+    )
+    if pangram_hourly_calls >= settings.pangram_hourly_warning:
+        warnings.append("Hourly Pangram detection usage has reached the configured warning threshold.")
     breaker_state = []
     for provider in providers:
         until = _breaker_until(db, owner, provider)
@@ -236,6 +308,10 @@ def provider_usage_summary(db: Session, owner: str) -> dict:
         "limits": {
             "hourlyWarning": settings.paid_call_hourly_warning,
             "hourlyHardLimit": settings.paid_call_hourly_hard_limit,
+            "pangramHourlyWarning": settings.pangram_hourly_warning,
+            "pangramHourlyHardLimit": settings.pangram_hourly_hard_limit,
+            "pangramDailyHardLimit": settings.pangram_daily_hard_limit,
+            "pangramMaxConcurrentCalls": settings.pangram_max_concurrent_calls,
             "failureBreakerThreshold": settings.provider_failure_breaker_threshold,
             "breakerSeconds": settings.provider_breaker_seconds,
             "retentionDays": settings.provider_usage_retention_days,

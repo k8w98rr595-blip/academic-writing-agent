@@ -1,4 +1,4 @@
-from .detectors import run_detection
+from .detectors import detection_content_fingerprint, run_detection
 from .rewriters import propose_rewrite
 
-__all__ = ["run_detection", "propose_rewrite"]
+__all__ = ["detection_content_fingerprint", "run_detection", "propose_rewrite"]

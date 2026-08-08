@@ -7,7 +7,7 @@ from celery import Celery
 from services.api.app.config import get_settings
 from services.api.app.database import session_scope
 from services.api.app.models import AnalysisRun, JobRecord, utcnow
-from services.api.app.providers import run_detection
+from services.api.app.providers import detection_content_fingerprint, run_detection
 from services.api.app.provider_usage import (
     cancel_unused_reservations,
     claim_provider_call,
@@ -64,7 +64,7 @@ def run_analysis_job(job_id: str, analysis_id: str, usage_reservation_id: str = 
             result = asyncio.run(
                 run_detection(
                     version.paragraphs,
-                    idempotency_key=f"{document.id}:{version.id}:pangram",
+                    idempotency_key=detection_content_fingerprint(version.paragraphs, settings.pangram_model),
                     analyzed_version_id=version.id,
                 )
             )

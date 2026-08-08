@@ -39,10 +39,10 @@ def synthetic_paper() -> str:
 
 def validate_provider(result: dict[str, Any], expected_name: str = "Pangram") -> None:
     required = {
-        "provider", "providerModelVersion", "isMock", "status", "error", "prediction",
+        "provider", "providerModel", "providerModelVersion", "isMock", "status", "error", "prediction",
         "qualifyingWords", "aiGeneratedPercent", "aiAssistedPercent", "humanPercent",
         "combinedRiskPercent", "spans", "warnings", "disclaimer", "analyzedVersionId",
-        "analyzedAt", "requestId", "latencyMs",
+        "analyzedAt", "detectedAt", "requestId", "taskReference", "latencyMs",
     }
     missing = sorted(required - set(result))
     if missing:
@@ -54,8 +54,12 @@ def validate_provider(result: dict[str, Any], expected_name: str = "Pangram") ->
         raise RuntimeError(f"{expected_name} failed: {message}")
     if result["isMock"] is not False:
         raise RuntimeError(f"{expected_name} returned a mock/sandbox result")
+    if result["providerModel"] != "pangram-4" or not str(result["providerModelVersion"]).startswith("4."):
+        raise RuntimeError("The real detector result is not auditable as Pangram 4")
     if result["combinedRiskPercent"] is None or not result["providerModelVersion"] or not result["requestId"]:
         raise RuntimeError(f"{expected_name} did not return a complete real result")
+    if result["taskReference"] != result["requestId"] or not str(result["taskReference"]).startswith("sha256:"):
+        raise RuntimeError("Pangram task reference was not safely hashed")
     total = result["aiGeneratedPercent"] + result["aiAssistedPercent"] + result["humanPercent"]
     if abs(total - 100) > 2:
         raise RuntimeError("Pangram percentages do not form a valid authorship distribution")
@@ -83,8 +87,14 @@ def main() -> int:
         try:
             health = client.get("/api/health")
             require_status(health, 200, "Health check")
-            if health.json().get("providerMode", {}).get("detector") != "pangram":
+            health_payload = health.json()
+            if health_payload.get("providerMode", {}).get("detector") != "pangram":
                 raise RuntimeError("Production DETECTOR_MODE is not pangram; no paid scan was started")
+            detector = health_payload.get("detectorProvider", {})
+            if detector.get("model") != "pangram-4":
+                raise RuntimeError("Production is not configured for the Pangram 4 selector")
+            if detector.get("paidCallsEnabled") is not True or detector.get("dataProcessingAcknowledged") is not True:
+                raise RuntimeError("Production Pangram safety gates are not both enabled")
 
             login = client.post(
                 "/api/v1/auth/login",

@@ -16,7 +16,7 @@ from .config import get_settings
 from .database import get_db, init_db, session_scope
 from .documents import DOCX_MIME, build_docx, extract_docx_text, validate_docx_upload
 from .models import AnalysisRun, Document, DocumentVersion, JobRecord, PatchRecord, RewriteSession, SessionRecord, utcnow
-from .providers import propose_rewrite, run_detection
+from .providers import detection_content_fingerprint, propose_rewrite, run_detection
 from .provider_usage import (
     ProviderCallSpec,
     cancel_unused_reservations,
@@ -109,6 +109,14 @@ def health() -> dict:
         "ok": True,
         "service": "paperlight-api",
         "providerMode": {"detector": settings.detector_mode, "rewrite": settings.rewrite_mode},
+        "detectorProvider": {
+            "provider": "Pangram" if settings.detector_mode == "pangram" else "Mock Pangram",
+            "model": settings.pangram_model if settings.detector_mode == "pangram" else "mock",
+            "paidCallsEnabled": settings.pangram_paid_calls_enabled if settings.detector_mode == "pangram" else False,
+            "dataProcessingAcknowledged": (
+                settings.detector_data_processing_acknowledged if settings.detector_mode == "pangram" else False
+            ),
+        },
     }
 
 
@@ -278,14 +286,14 @@ def restore_document_version(
 async def analyze_document(document_id: str, owner: str = Depends(current_owner), db: Session = Depends(get_db)):
     document = get_owned_document(db, owner, document_id)
     version = get_version(db, document)
-    operation_seed = f"{document.id}:{version.id}:pangram"
+    operation_seed = detection_content_fingerprint(version.paragraphs, settings.pangram_model)
     usage_reservation_id = ""
     usage_finalized = False
     if settings.detector_mode == "pangram":
         usage_reservation_id = reserve_provider_calls(
             owner,
             "Pangram",
-            [ProviderCallSpec("detection", "current", operation_seed)],
+            [ProviderCallSpec("detection", settings.pangram_model, operation_seed)],
         )["detection"]
     job = create_job(db, owner, document.id, "analysis")
     run = AnalysisRun(id=new_id("analysis"), document_id=document.id, version_id=version.id, status="running", provider_mode=settings.detector_mode)

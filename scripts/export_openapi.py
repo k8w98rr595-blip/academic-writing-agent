@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root))
+os.environ.setdefault("APP_ENV", "test")
 
 from services.api.app.main import app  # noqa: E402
 

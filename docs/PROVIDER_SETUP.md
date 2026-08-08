@@ -25,31 +25,39 @@ The application reserves two paid-call slots before each DeepSeek proposal—one
 
 ## Pangram detection
 
-On 2026-07-19 Pangram's [official AI Detection documentation](https://docs.pangram.com/api-reference/ai-detection) identifies the current contract as:
+On 2026-08-08 Pangram's official documentation identifies the current contract as:
 
-1. `POST https://text.external-api.pangram.com/task` with the server-only `x-api-key` header and `{ "text": ..., "public_dashboard_link": false }`.
-2. Poll `GET https://text.external-api.pangram.com/task/{task_id}` until `STAGE_SUCCESS` or `STAGE_FAILED`.
-3. Read versioned `fraction_ai`, `fraction_ai_assisted`, `fraction_human`, `prediction_short`, and `windows` from a successful response.
+1. Discover account entitlements with `GET https://text.external-api.pangram.com/models` and the server-only `x-api-key` header.
+2. Require the returned catalog to contain `pangram-4`, then submit exactly one `POST https://text.external-api.pangram.com/task` with `{ "text": ..., "model": "pangram-4", "public_dashboard_link": false }`.
+3. Poll only that task with `GET https://text.external-api.pangram.com/task/{task_id}` until `STAGE_SUCCESS` or `STAGE_FAILED`.
+4. Require a returned `version` beginning with `4.` and validate all fractions, Pangram 4 window fields, text and offsets before saving any result.
 
-Pangram's [deprecated endpoint page](https://docs.pangram.com/api-reference/deprecated-endpoints) now lists synchronous `POST https://text.api.pangram.com/v3` as legacy. Paperlight therefore uses the supported async API while preserving Pangram's V3/3.x model result fields.
+Pangram's [deprecated endpoint page](https://docs.pangram.com/api-reference/deprecated-endpoints) lists synchronous `POST https://text.api.pangram.com/v3` as legacy. Model discovery is account-aware, so Paperlight does not assume `default` means Pangram 4. See [API overview](https://docs.pangram.com/api-reference/introduction), [Models](https://docs.pangram.com/api-reference/models), and [AI Detection](https://docs.pangram.com/api-reference/ai-detection).
 
 ```dotenv
 DETECTOR_MODE=mock
 DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=0
-PANGRAM_API_URL=https://text.external-api.pangram.com
+PANGRAM_PAID_CALLS_ENABLED=0
+PANGRAM_API_BASE_URL=https://text.external-api.pangram.com
 PANGRAM_API_KEY=<configure-in-Railway-api-service>
+PANGRAM_MODEL=pangram-4
 PANGRAM_POLL_INTERVAL_SECONDS=0.75
 PANGRAM_MAX_POLL_SECONDS=45
+PANGRAM_HOURLY_WARNING=1
+PANGRAM_HOURLY_HARD_LIMIT=2
+PANGRAM_DAILY_HARD_LIMIT=4
+PANGRAM_MAX_CONCURRENT_CALLS=1
+PANGRAM_RESERVATION_TTL_SECONDS=900
 PROVIDER_TIMEOUT_SECONDS=45
 ```
 
 ### Railway activation order
 
 1. In the Railway `api` service, add `PANGRAM_API_KEY` as a private backend Variable. Do not reveal or copy its value during verification.
-2. Add `PANGRAM_API_URL=https://text.external-api.pangram.com`, but keep `DETECTOR_MODE=mock` and `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=0`.
+2. Add the non-secret variables above, but keep `DETECTOR_MODE=mock`, `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=0`, and `PANGRAM_PAID_CALLS_ENABLED=0`.
 3. Redeploy and confirm `/api/health` still reports `detector: mock`.
 4. Confirm Pangram's current processing region, retention/deletion, no-training position, commercial terms, rate limits, and budget controls in writing.
-5. In one planned deployment, set `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=1` and `DETECTOR_MODE=pangram`.
+5. Only after separate owner approval, set `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=1`, `PANGRAM_PAID_CALLS_ENABLED=1`, and `DETECTOR_MODE=pangram` in one planned deployment.
 6. Run `python scripts/acceptance_real_detectors.py --confirm-cost` with owner credentials supplied only through local process environment variables. The script creates and deletes one synthetic paper and performs exactly one real Pangram submission.
 7. If acceptance fails, restore `DETECTOR_MODE=mock`. Rotate the key only when exposure is suspected; do not print it while troubleshooting.
 

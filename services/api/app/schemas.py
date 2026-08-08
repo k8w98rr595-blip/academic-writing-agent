@@ -81,6 +81,10 @@ class ProviderUsagePeriods(BaseModel):
 class ProviderUsageLimits(BaseModel):
     hourlyWarning: int
     hourlyHardLimit: int
+    pangramHourlyWarning: int
+    pangramHourlyHardLimit: int
+    pangramDailyHardLimit: int
+    pangramMaxConcurrentCalls: int
     failureBreakerThreshold: int
     breakerSeconds: int
     retentionDays: int

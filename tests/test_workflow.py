@@ -32,7 +32,8 @@ def test_owner_only_mock_workflow(client: TestClient, headers: dict[str, str], c
     result = analysis.json()["analysis"]["result"]
     assert result["isMock"] is True
     assert result["provider"] == "Mock Pangram"
-    assert result["providerModelVersion"] == "mock-pangram-v3"
+    assert result["providerModel"] == "mock"
+    assert result["providerModelVersion"] == "mock-pangram-4-shape-v1"
     assert result["disclaimer"].startswith("This is a probabilistic AI writing risk signal")
     assert round(result["aiGeneratedPercent"] + result["aiAssistedPercent"] + result["humanPercent"], 1) == 100.0
     assert all(row["classification"] in {"ai_generated", "ai_assisted"} for row in result["spans"])

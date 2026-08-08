@@ -28,7 +28,7 @@ The initializer never replaces an existing `.env.local` unless `--force` is supp
 
 ## Provider configuration
 
-Provider keys are server-only. Detection has one active adapter boundary: deterministic Mock Pangram or real Pangram. The current official Pangram REST contract creates an async task with `POST /task` and polls `GET /task/{task_id}`; the older synchronous `/v3` URL is deprecated. Keep `DETECTOR_MODE=mock` until Pangram credentials, cost controls, and data-processing terms are approved; then follow `docs/PROVIDER_SETUP.md`. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative.
+Provider keys are server-only. Detection has one active adapter boundary: deterministic Mock Pangram or real Pangram 4. The current official Pangram REST contract discovers account selectors with `GET /models`, submits one async `POST /task` using `model: "pangram-4"`, and polls only `GET /task/{task_id}`; the older synchronous `/v3` URL is deprecated. Keep `DETECTOR_MODE=mock`, `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=0`, and `PANGRAM_PAID_CALLS_ENABLED=0` until the separate credential, data, cost and one-call acceptance gates are approved; then follow `docs/PROVIDER_SETUP.md` and `docs/PANGRAM_4_DEPLOYMENT_READINESS.md`. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative.
 
 ## Deployment
 

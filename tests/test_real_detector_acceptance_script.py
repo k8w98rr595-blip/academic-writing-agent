@@ -16,8 +16,10 @@ def test_real_detector_acceptance_uses_only_synthetic_valid_length_text():
 def test_real_detector_acceptance_rejects_mock_provider_result():
     provider = {
         "provider": "Pangram",
-        "providerModelVersion": "3.0",
-        "requestId": "synthetic-request",
+        "providerModel": "pangram-4",
+        "providerModelVersion": "4.0",
+        "requestId": "sha256:synthetic-request",
+        "taskReference": "sha256:synthetic-request",
         "prediction": "Mixed",
         "qualifyingWords": 900,
         "aiGeneratedPercent": 30.0,
@@ -29,6 +31,7 @@ def test_real_detector_acceptance_rejects_mock_provider_result():
         "disclaimer": "probabilistic",
         "analyzedVersionId": "version-synthetic",
         "analyzedAt": "2026-07-19T00:00:00Z",
+        "detectedAt": "2026-07-19T00:00:00Z",
         "isMock": True,
         "latencyMs": 10,
         "status": "success",

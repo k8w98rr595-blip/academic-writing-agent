@@ -76,6 +76,54 @@ def test_worker_reservation_can_be_claimed_only_once_and_then_finalized():
         assert event.status == "outcome_unknown"
 
 
+def test_pangram_concurrency_lock_allows_only_one_active_detection():
+    active = reserve_provider_calls(OWNER, "Pangram", [_spec("detection", "content-one")])["detection"]
+    with pytest.raises(HTTPException) as blocked:
+        reserve_provider_calls(OWNER, "Pangram", [_spec("detection", "content-two")])
+    assert blocked.value.status_code == 409
+    finalize_provider_call(active, final_status="success")
+    next_reservation = reserve_provider_calls(OWNER, "Pangram", [_spec("detection", "content-two")])
+    assert next_reservation["detection"]
+
+
+def test_pangram_same_content_is_blocked_for_24_hours():
+    first = reserve_provider_calls(OWNER, "Pangram", [_spec("detection", "same-content-hash")])["detection"]
+    finalize_provider_call(first, final_status="success")
+    with pytest.raises(HTTPException) as duplicate:
+        reserve_provider_calls(OWNER, "Pangram", [_spec("detection", "same-content-hash")])
+    assert duplicate.value.status_code == 409
+    assert "within 24 hours" in str(duplicate.value.detail)
+
+
+def test_pangram_daily_limit_counts_completed_calls(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PANGRAM_HOURLY_WARNING", "1")
+    monkeypatch.setenv("PANGRAM_HOURLY_HARD_LIMIT", "2")
+    monkeypatch.setenv("PANGRAM_DAILY_HARD_LIMIT", "2")
+    get_settings.cache_clear()
+    try:
+        ids = []
+        for index in range(2):
+            reservation = reserve_provider_calls(
+                OWNER, "Pangram", [_spec("detection", f"daily-{index}")]
+            )["detection"]
+            finalize_provider_call(reservation, final_status="success")
+            ids.append(reservation)
+        with session_scope() as db:
+            for reservation in ids:
+                event = db.get(ProviderUsageEvent, reservation)
+                assert event is not None
+                event.created_at = utcnow() - timedelta(hours=2)
+        with pytest.raises(HTTPException) as blocked:
+            reserve_provider_calls(OWNER, "Pangram", [_spec("detection", "daily-blocked")])
+        assert blocked.value.status_code == 429
+        assert "Daily Pangram" in str(blocked.value.detail)
+    finally:
+        monkeypatch.delenv("PANGRAM_HOURLY_WARNING", raising=False)
+        monkeypatch.delenv("PANGRAM_HOURLY_HARD_LIMIT", raising=False)
+        monkeypatch.delenv("PANGRAM_DAILY_HARD_LIMIT", raising=False)
+        get_settings.cache_clear()
+
+
 def test_hourly_warning_and_hard_limit_are_enforced(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("PAID_CALL_HOURLY_WARNING", "1")
     monkeypatch.setenv("PAID_CALL_HOURLY_HARD_LIMIT", "2")

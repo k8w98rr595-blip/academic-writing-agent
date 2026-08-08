@@ -65,11 +65,12 @@ function CurrentDetectionPanel({ result, stale, busy, onAnalyze, onTab }: { resu
     {typeof result.combinedRiskPercent === "number" ? <div className="score-scale" aria-label={`AI 生成与 AI 辅助风险合计 ${result.combinedRiskPercent}%`}><span style={{ width: `${Math.max(3, result.combinedRiskPercent)}%` }} /></div> : <div className="score-scale unavailable" aria-label="本次没有可用风险比例" />}
     <div className="evidence-legend"><span><i className="deep" />AI-generated（深蓝）</span><span><i />AI-assisted（浅蓝）</span></div>
     <div className="qualifying-row"><span>{result.qualifyingWords.toLocaleString()} 个有效单词</span><span>{result.spans.length} 个被标记片段</span></div>
-    <section className="provider-summary"><div><span>检测器</span><strong>{result.provider}</strong></div><div><span>模型 / 接口版本</span><strong>{result.providerModelVersion || "未返回"}</strong></div><div><span>判断</span><strong>{result.prediction || "未形成"}</strong></div></section>
+    <section className="provider-summary"><div><span>检测器</span><strong>{result.provider}</strong></div><div><span>模型</span><strong>{result.providerModel || (result.isMock ? "mock" : "未返回")}</strong></div><div><span>接口 / 模型版本</span><strong>{result.providerModelVersion || "未返回"}</strong></div><div><span>检测时间</span><strong>{new Date(result.detectedAt || result.analyzedAt).toLocaleString()}</strong></div><div><span>判断</span><strong>{result.prediction || "未形成"}</strong></div><div><span>状态</span><strong>{stale ? "已过期" : "当前版本"}</strong></div></section>
     {comparison ? <div className={`risk-comparison ${comparison.changePercentagePoints > 0 ? "increased" : ""}`}><span>修改前后风险变化</span><strong>{comparison.beforePercent}% → {comparison.afterPercent}%</strong><small>{comparison.changePercentagePoints > 0 ? "+" : ""}{comparison.changePercentagePoints} 个百分点；如实显示，不代表修改必然降低风险。</small></div> : null}
     {warnings.length ? <section className="detection-warnings"><h3>检测说明</h3><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></section> : null}
     {stale ? <div className="stale-notice"><Clock3 size={18} /><div><strong>检测结果已过期</strong><span>文稿在本次检测后发生了修改，旧范围不会继续高亮当前版本。</span><button onClick={onAnalyze}>重新检测当前版本</button></div></div> : null}
     {!failed && !stale && result.spans.length ? <button className="button primary wide" onClick={() => onTab("agent")}>选择蓝色片段进入写作助手</button> : <button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "重新运行 AI 写作风险检测"}</button>}
+    <p className="detection-cost-note">{result.isMock ? "当前演示检测不会产生 Pangram 费用。切换到真实 Pangram 后，只有你明确点击检测才会提交可能计费的任务。" : "真实 Pangram 检测按量计费。本次检测由你明确点击发起；编辑和保存不会自动复检。"}</p>
     <p className="inspector-disclaimer">{mockDisclaimer(result.isMock, result.disclaimer)}</p>
   </div>;
 }
@@ -78,7 +79,7 @@ function DetectionPanel({ document, busy, onAnalyze, onTab }: Pick<Props, "docum
   const analysis = document.analysis;
   const result = analysis?.result;
   if (!result) {
-    return <div className="empty-inspector"><ShieldCheck size={26} /><span className="eyebrow">AI EVIDENCE</span><h2>当前版本尚未检测</h2><p>运行 AI 写作风险检测，查看 AI 生成风险、AI 辅助风险和可审阅片段。结果不能证明文本作者身份或学术不端。</p><button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "运行 AI 写作风险检测"}</button></div>;
+    return <div className="empty-inspector"><ShieldCheck size={26} /><span className="eyebrow">AI EVIDENCE</span><h2>当前版本尚未检测</h2><p>运行 AI 写作风险检测，查看 AI 生成风险、AI 辅助风险和可审阅片段。结果不能证明文本作者身份或学术不端。</p><p className="detection-cost-note">只有你明确点击检测才会发起任务；编辑和保存不会自动调用真实 Pangram。真实模式下每次检测可能产生费用。</p><button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "运行 AI 写作风险检测"}</button></div>;
   }
   if (!("aiGeneratedPercent" in result)) {
     return <LegacyDetectionPanel result={result} stale={Boolean(analysis?.isStale)} onAnalyze={onAnalyze} />;

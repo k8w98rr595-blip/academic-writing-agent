@@ -9,7 +9,8 @@ from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 
-load_dotenv(".env.local")
+if os.getenv("APP_ENV", "development").strip().lower() != "test":
+    load_dotenv(".env.local")
 
 
 def _bool(name: str, default: bool = False) -> bool:
@@ -52,8 +53,15 @@ class Settings:
     rewrite_mode: str
     pangram_api_url: str
     pangram_api_key: str
+    pangram_model: str
+    pangram_paid_calls_enabled: bool
     pangram_poll_interval_seconds: float
     pangram_max_poll_seconds: int
+    pangram_hourly_warning: int
+    pangram_hourly_hard_limit: int
+    pangram_daily_hard_limit: int
+    pangram_max_concurrent_calls: int
+    pangram_reservation_ttl_seconds: int
     detector_data_processing_acknowledged: bool
     deepseek_base_url: str
     deepseek_api_key: str
@@ -98,10 +106,20 @@ def get_settings() -> Settings:
         redis_url=os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0"),
         detector_mode=os.getenv("DETECTOR_MODE", "mock").strip().lower(),
         rewrite_mode=os.getenv("REWRITE_MODE", "mock").strip().lower(),
-        pangram_api_url=os.getenv("PANGRAM_API_URL", "https://text.external-api.pangram.com"),
+        pangram_api_url=os.getenv(
+            "PANGRAM_API_BASE_URL",
+            os.getenv("PANGRAM_API_URL", "https://text.external-api.pangram.com"),
+        ).strip(),
         pangram_api_key=os.getenv("PANGRAM_API_KEY", ""),
+        pangram_model=os.getenv("PANGRAM_MODEL", "pangram-4").strip().lower(),
+        pangram_paid_calls_enabled=_bool("PANGRAM_PAID_CALLS_ENABLED", False),
         pangram_poll_interval_seconds=float(os.getenv("PANGRAM_POLL_INTERVAL_SECONDS", "0.75")),
         pangram_max_poll_seconds=int(os.getenv("PANGRAM_MAX_POLL_SECONDS", "45")),
+        pangram_hourly_warning=int(os.getenv("PANGRAM_HOURLY_WARNING", "1")),
+        pangram_hourly_hard_limit=int(os.getenv("PANGRAM_HOURLY_HARD_LIMIT", "2")),
+        pangram_daily_hard_limit=int(os.getenv("PANGRAM_DAILY_HARD_LIMIT", "4")),
+        pangram_max_concurrent_calls=int(os.getenv("PANGRAM_MAX_CONCURRENT_CALLS", "1")),
+        pangram_reservation_ttl_seconds=int(os.getenv("PANGRAM_RESERVATION_TTL_SECONDS", "900")),
         detector_data_processing_acknowledged=_bool("DETECTOR_DATA_PROCESSING_ACKNOWLEDGED", False),
         deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
@@ -136,8 +154,24 @@ def get_settings() -> Settings:
         raise RuntimeError("DETECTOR_MODE must be mock or pangram")
     if settings.pangram_poll_interval_seconds <= 0 or settings.pangram_max_poll_seconds <= 0:
         raise RuntimeError("Pangram polling settings must be positive")
+    if settings.pangram_model != "pangram-4":
+        raise RuntimeError("PANGRAM_MODEL must be pangram-4 for the current Paperlight detector")
+    if not 1 <= settings.pangram_hourly_warning <= settings.pangram_hourly_hard_limit <= 100:
+        raise RuntimeError("Pangram hourly warning and hard limit are invalid")
+    if not settings.pangram_hourly_hard_limit <= settings.pangram_daily_hard_limit <= 1000:
+        raise RuntimeError("Pangram daily hard limit is invalid")
+    if not 1 <= settings.pangram_max_concurrent_calls <= 10:
+        raise RuntimeError("Pangram concurrency limit is invalid")
+    if not 60 <= settings.pangram_reservation_ttl_seconds <= 86400:
+        raise RuntimeError("Pangram reservation TTL is invalid")
     if settings.detector_mode == "pangram":
         _require_official_endpoint(settings.pangram_api_url, "text.external-api.pangram.com", "Pangram", {""})
+        if not settings.pangram_api_key:
+            raise RuntimeError("Pangram mode requires PANGRAM_API_KEY")
+        if not settings.detector_data_processing_acknowledged:
+            raise RuntimeError("Pangram mode requires acknowledged data-processing terms")
+        if not settings.pangram_paid_calls_enabled:
+            raise RuntimeError("Pangram mode requires PANGRAM_PAID_CALLS_ENABLED=1")
     if not 1 <= settings.paid_call_hourly_warning <= settings.paid_call_hourly_hard_limit <= 1000:
         raise RuntimeError("Paid-call warning and hard-limit settings are invalid")
     if not 2 <= settings.provider_failure_breaker_threshold <= 100:
