@@ -4,7 +4,7 @@ Paperlight is an owner-only workspace focused on AI writing-risk detection and a
 
 The writing Agent is a multi-turn, author-reviewed workflow. The owner selects a risky passage, states a writing-quality goal, reviews the proposed patch, and may ask the same rewrite session for another revision before accepting or rejecting it. Follow-up revisions keep the original passage as an immutable safety anchor. Context is derived by the server from the selected immutable document version; full-document context requires an explicit confirmation. The Agent never auto-applies a patch, auto-runs detection, or optimizes against a detector score.
 
-The default providers are deterministic mocks for product testing. Mock results are always labeled as demonstrations and are not Turnitin results or proof of authorship.
+Local development defaults to deterministic mocks for product testing. Mock results are always labeled as demonstrations and are not Turnitin results or proof of authorship. The owner-only production deployment currently uses real Pangram 4 detection after a controlled synthetic acceptance; its output remains a probabilistic internal risk signal.
 
 The current production stage intentionally uses password-only owner authentication (`REQUIRE_TOTP=0`). Paid provider work is guarded by a content-free usage ledger, an hourly warning/hard limit, duplicate-call protection, and a failure circuit breaker. These controls do not replace the billing dashboards and do not make the deployment suitable for public or student accounts.
 
@@ -28,17 +28,17 @@ The initializer never replaces an existing `.env.local` unless `--force` is supp
 
 ## Provider configuration
 
-Provider keys are server-only. Detection has one active adapter boundary: deterministic Mock Pangram or real Pangram 4. The current official Pangram REST contract discovers account selectors with `GET /models`, submits one async `POST /task` using `model: "pangram-4"`, and polls only `GET /task/{task_id}`; the older synchronous `/v3` URL is deprecated. Keep `DETECTOR_MODE=mock`, `DETECTOR_DATA_PROCESSING_ACKNOWLEDGED=0`, and `PANGRAM_PAID_CALLS_ENABLED=0` until the separate credential, data, cost and one-call acceptance gates are approved; then follow `docs/PROVIDER_SETUP.md` and `docs/PANGRAM_4_DEPLOYMENT_READINESS.md`. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative.
+Provider keys are server-only. Detection has one active adapter boundary: deterministic Mock Pangram or real Pangram 4. The current official Pangram REST contract discovers account selectors with `GET /models`, submits one async `POST /task` using `model: "pangram-4"`, and polls only `GET /task/{task_id}`; the older synchronous `/v3` URL is deprecated. Local and fresh deployments default to Mock until the separate credential, data, cost and acceptance gates are approved. The current owner-only production deployment has passed those controlled activation gates and runs Pangram 4; follow `docs/PROVIDER_SETUP.md`, `docs/PANGRAM_4_DEPLOYMENT_READINESS.md`, and the production acceptance record before changing modes. The DeepSeek path uses V4 Pro for the proposed edit and V4 Flash for semantic-safety validation; deterministic protected-token checks remain authoritative.
 
 ## Deployment
 
 - Live owner-only frontend: <https://k8w98rr595-blip.github.io/academic-writing-agent/>.
-- Live API: <https://api-production-840c.up.railway.app/api/health> (Mock detection and DeepSeek V4 rewrite).
+- Live API: <https://api-production-840c.up.railway.app/api/health> (Pangram 4 detection and DeepSeek V4 rewrite).
 - Frontend: GitHub Pages from `.github/workflows/pages.yml`; `.github/workflows/production-smoke.yml` verifies the production wiring without credentials.
 - Backend: Railway from the root `Dockerfile` and `railway.json`, with managed PostgreSQL, Redis, and an attached `/data` volume.
 - Database/queue/object storage: local Docker Compose for development; managed PostgreSQL, Redis, and S3-compatible storage for public rollout.
 
-This deployment remains private to the configured owner. DeepSeek rewrite is enabled, while real Pangram detection, public registration, payments, and student rollout remain disabled until their separate evaluation and compliance gates are complete.
+This deployment remains private to the configured owner. Real Pangram 4 detection and DeepSeek rewrite are enabled. Public registration, payments and student rollout remain disabled until stronger authentication, independent benchmarking, account-specific data governance, billing monitoring and compliance gates are complete.
 
 Create a replacement owner-password verifier without displaying or storing plaintext with `python scripts/hash_owner_password.py`. The ignored output contains only an ACL-restricted Argon2id verifier for `OWNER_PASSWORD_HASH`; production password rotation still requires the owner to update Railway and verify a fresh login.
 

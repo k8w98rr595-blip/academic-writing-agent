@@ -53,3 +53,9 @@ Before commit, the following completed without reading local or production secre
 - Docker CLI is not installed on the workstation, so a local Docker build could not be executed. The Railway build after push is the required container-build verification and must not be reported successful until its deployment is healthy.
 
 No Pangram API request, model-catalog request, detection task, payment, recharge or auto-refill action was performed during this credential-free verification.
+
+## Production acceptance outcome — 2026-08-10
+
+The owner later completed the credential, data-processing acknowledgement, paid-call and two-call remediation gates. The first real 851-word synthetic task exposed a fail-closed whitespace-normalization mapping defect; revision `e75267c` repaired it without accepting content changes. A separately authorized second task returned Pangram 4 version `4.0`, produced valid three-class probabilities and 28 mapped windows, became stale after an explicit edit, removed every old highlight from version 2, and was followed by deletion of the synthetic document. No third task was created.
+
+The two known task submissions are estimated at USD 0.90 total under the public USD 0.05 per started 100-word rule; actual billing remains a dashboard reconciliation item. See [Production Pangram 4 acceptance — 2026-08-10](PRODUCTION_PANGRAM_4_ACCEPTANCE_2026-08-10.md).

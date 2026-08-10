@@ -1,6 +1,6 @@
 # Cost alerts and credential custody runbook
 
-Last implementation update: 2026-08-08 (Asia/Shanghai). Dashboard balances below are historical point-in-time observations and must be rechecked before any purchase decision. This document contains no passwords, tokens, API keys, TOTP seeds, session values, or recovery codes.
+Last implementation update: 2026-08-10 (Asia/Shanghai). Dashboard balances below are historical point-in-time observations and must be rechecked before any purchase decision. This document contains no passwords, tokens, API keys, TOTP seeds, session values, or recovery codes.
 
 ## Current account state
 
@@ -8,7 +8,7 @@ Last implementation update: 2026-08-08 (Asia/Shanghai). Dashboard balances below
 |---|---|---|
 | Railway | On 2026-08-08 the owner reported upgrading to Hobby after the trial expired. The project architecture then showed `api`, PostgreSQL, Redis, and their persistent volumes online. The exact billing balance was not read. | Keep a workspace usage alert enabled, review usage weekly, and verify the invoice/credit balance monthly. Do not enable a hard service-stopping limit without accepting the outage consequence. |
 | DeepSeek | After production acceptance, the Usage page showed CNY 19.83 balance, CNY 0.16 cumulative spend, 26 requests, and 33,255 tokens. The native warning was reopened and verified enabled at CNY 10. | Keep the CNY 10 threshold enabled and review it monthly. No recharge or payment change was made. |
-| Pangram | Production adapter is implemented, but production remains in Mock mode and no credential has been supplied for this integration. | Keep disabled until the applicable DPA/retention terms and budget controls are confirmed. |
+| Pangram | Real Pangram 4 is enabled for the owner-only production stage. Two real 851-word synthetic tasks are known: the first exposed a local whitespace-mapping defect and the authorized post-fix task passed. Actual billing was not read. | Reconcile the two tasks in the Pangram dashboard, keep auto-refill off, and do not expand access until account-specific retention terms and the independent benchmark are complete. |
 
 The observed values are a point-in-time dashboard reading, not an accounting record. Re-check the provider dashboard before making a purchase decision.
 
@@ -52,7 +52,7 @@ For real detection, only Railway `api` Variables may contain `PANGRAM_API_KEY`. 
 
 The existing `.env.local`, `data/bootstrap-owner.txt`, and `data/railway-owner.txt` files remain present. Their Windows ACLs were hardened without reading their contents: inheritance is disabled and only the current Windows user, SYSTEM, and Administrators have FullControl. They are still plaintext and should be migrated to the password manager. Deletion requires a separate owner confirmation.
 
-During the final post-logout check, saved-password autofill exposed the owner-password field value to the browser automation accessibility channel. The value is not repeated in source, documentation, test output, or the knowledge vault, and the visible field was cleared immediately. Treat this as a credential exposure: rotate the owner password, deploy only the replacement Argon2id hash, verify that old sessions fail, and disable password autofill for the production origin.
+Saved-password autofill exposed the owner-password field value to the browser automation accessibility channel during earlier acceptance and recurred during the 2026-08-10 post-logout verification. The values are not repeated in source, documentation, test output, or the knowledge vault, and the visible field was cleared immediately. Treat the latest event as a new credential exposure: rotate the owner password again, deploy only its replacement Argon2id hash, verify that old sessions fail, and disable password autofill for the production origin before any further browser-assisted login.
 
 ## Rotation and recovery
 
