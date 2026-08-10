@@ -25,5 +25,6 @@ The asynchronous task completed far enough to return analyzed text. Pangram's cu
 - No second real Pangram task was submitted during diagnosis or remediation.
 - The original result cannot be recovered by Paperlight because only a SHA-256 task reference is persisted; this intentionally prevents later polling with a stored raw task ID.
 - Whether the first provider task incurred a charge must be confirmed in Pangram's billing dashboard. Paperlight does not infer provider billing from a completed HTTP workflow.
+- The production smoke workflow now validates an explicit expected detector mode. Its production default is `pangram` while the application runtime default remains `mock`; repository variable `PAPERLIGHT_EXPECTED_DETECTOR_MODE` can deliberately override the production expectation when modes change.
 
 Official contract: [Pangram AI Detection](https://docs.pangram.com/api-reference/ai-detection).
