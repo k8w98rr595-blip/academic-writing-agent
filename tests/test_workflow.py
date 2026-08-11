@@ -23,6 +23,24 @@ def create_document(client: TestClient, headers: dict[str, str], text: str) -> d
     return response.json()["document"]
 
 
+def test_document_word_count_boundary(client: TestClient, headers: dict[str, str]):
+    too_short = client.post(
+        "/api/v1/documents",
+        headers=headers,
+        data={"title": "Too short", "text": "word " * 499},
+    )
+    assert too_short.status_code == 422
+    assert too_short.json()["detail"] == "Paper must contain at least 500 words"
+
+    minimum = client.post(
+        "/api/v1/documents",
+        headers=headers,
+        data={"title": "Minimum length", "text": "word " * 500},
+    )
+    assert minimum.status_code == 201, minimum.text
+    assert minimum.json()["document"]["currentVersion"]["wordCount"] == 500
+
+
 def test_owner_only_mock_workflow(client: TestClient, headers: dict[str, str], coursework_text: str):
     assert client.get("/api/v1/documents").status_code == 401
     document = create_document(client, headers, coursework_text)

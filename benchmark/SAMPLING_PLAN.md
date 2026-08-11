@@ -14,7 +14,7 @@ Target at least 700 documents before threshold work:
 - 70 translated academic texts: human and AI translation routes kept distinct, source language and translator/tool recorded.
 - 35 template-heavy verified-human papers and 35 technical-feature papers containing formulas, citations, tables, abbreviations, and specialist terminology. These are intentional stress oversamples and may overlap discipline quotas only when weighting is reported.
 
-Stratify length as short 800–1,499 words, medium 1,500–2,999, and long 3,000–5,000. Include lower- and upper-division undergraduates plus developing, typical, and advanced writing quality. Keep all versions from one author/assignment in the same split to prevent leakage.
+Stratify length as short 500–1,499 words, medium 1,500–2,999, and long 3,000–5,000. Include lower- and upper-division undergraduates plus developing, typical, and advanced writing quality. Keep all versions from one author/assignment in the same split to prevent leakage.
 
 ## Final blind set
 

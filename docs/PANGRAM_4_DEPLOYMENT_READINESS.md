@@ -16,7 +16,7 @@ Verified against Pangram's public official material on 2026-08-08 (Asia/Shanghai
 | Pricing | Pangram 4 is displayed at USD 0.05 per 100 words; Pangram 3 at USD 0.05 per 1,000 words; Bulk receives a 20% discount. | [API solution](https://www.pangram.com/solutions/api) |
 | Languages | Pangram advertises detection in more than 20 languages. Paperlight v1 remains limited to English coursework. | [Multilingual detection](https://www.pangram.com/solutions/multilingual) |
 
-The official API reference does not publish a numeric single-task hard minimum or maximum text length. Pangram marketing says it can work on text as short as 75 words, but this is not treated as the API validation contract. Paperlight continues to enforce 800–5,000 English words.
+The official API reference does not publish a numeric single-task hard minimum or maximum text length. Pangram marketing says it can work on text as short as 75 words, but this is not treated as the API validation contract. Paperlight continues to enforce 500–5,000 English words.
 
 ## Privacy and retention conclusion
 

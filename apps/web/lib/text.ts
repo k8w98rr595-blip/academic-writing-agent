@@ -1,5 +1,8 @@
 import type { EvidenceSpan, Paragraph } from "./types";
 
+export const MIN_DOCUMENT_WORDS = 500;
+export const MAX_DOCUMENT_WORDS = 5000;
+
 export type HighlightChunk = { text: string; classification?: "ai_generated" | "ai_assisted" };
 
 export function splitHighlights(text: string, spans: EvidenceSpan[]): HighlightChunk[] {

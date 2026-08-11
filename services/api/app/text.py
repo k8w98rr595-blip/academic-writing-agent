@@ -7,7 +7,7 @@ from collections import Counter
 from fastapi import HTTPException, status
 
 
-MIN_WORDS = 800
+MIN_WORDS = 500
 MAX_WORDS = 5000
 MAX_PARAGRAPHS = 400
 
