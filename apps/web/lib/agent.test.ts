@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRewriteMessage } from "./agent";
+import { buildRewriteMessage, selectInitialRewriteTarget } from "./agent";
 import type { Patch } from "./types";
 
 const pendingPatch: Patch = {
@@ -47,5 +47,35 @@ describe("buildRewriteMessage", () => {
       context_scope: "document",
       confirm_full_document_context: true,
     });
+  });
+});
+
+describe("selectInitialRewriteTarget", () => {
+  const paragraphs = [
+    { id: "paragraph_1", text: "A repeated claim appears. A repeated claim appears." },
+    { id: "paragraph_2", text: "It is important to note that the evidence supports the claim." },
+  ];
+
+  it("prefers an explicit unique author selection", () => {
+    expect(selectInitialRewriteTarget(paragraphs, [], {
+      paragraphId: "paragraph_2",
+      text: "the evidence supports the claim",
+    })).toEqual({ paragraphId: "paragraph_2", text: "the evidence supports the claim" });
+  });
+
+  it("uses the highest-priority detected passage when there is no selection", () => {
+    expect(selectInitialRewriteTarget(paragraphs, [
+      { paragraphId: "paragraph_1", start: 0, end: 24, classification: "ai_assisted", score: 0.9, confidence: 0.9 },
+      { paragraphId: "paragraph_2", start: 0, end: 35, classification: "ai_generated", score: 0.7, confidence: 0.7 },
+    ], { paragraphId: "paragraph_1", text: "" })).toEqual({
+      paragraphId: "paragraph_2",
+      text: "It is important to note that the ev",
+    });
+  });
+
+  it("falls back to the whole paragraph when a detected fragment is repeated", () => {
+    expect(selectInitialRewriteTarget(paragraphs, [
+      { paragraphId: "paragraph_1", start: 0, end: 16, classification: "ai_generated", score: 0.9, confidence: 0.9 },
+    ], { paragraphId: "paragraph_1", text: "" })).toEqual({ paragraphId: "paragraph_1", text: "" });
   });
 });

@@ -32,5 +32,9 @@ def test_current_detection_copy_uses_single_provider_risk_language():
     assert "检测时间" in inspector
     assert "真实 Pangram 检测按量计费" in inspector
     assert "编辑和保存不会自动复检" in inspector
+    assert "一键降低" in inspector
+    assert "不会承诺“AI 率为零”" in inspector
+    assert "保存为可恢复的新版本" in inspector
+    assert "Mock 演示模式只生成预览" in inspector
     for removed in ("融合风险比例", "Provider 原始范围", "两家一致", "单家命中", "检测结果不一致"):
         assert removed not in inspector

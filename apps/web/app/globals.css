@@ -222,6 +222,7 @@ mark.evidence:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 .stale-notice span { color: #786746; font-size: 9px; }
 .stale-notice button { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--blue); font-size: 9px; text-decoration: underline; }
 .detection-cost-note { margin: 14px 0 0; padding: 10px 12px; border-left: 3px solid #d7a342; background: #fff9ee; color: #6f562b; font-size: 9px; line-height: 1.55; }
+.one-click-note { margin: 12px 0 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
 .inspector-disclaimer { margin: 16px 0 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
 .compose-intro, .versions-intro { display: grid; gap: 8px; margin-bottom: 22px; color: var(--muted); }
 .compose-intro svg, .versions-intro svg { color: var(--accent); }
@@ -230,6 +231,7 @@ mark.evidence:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 .selection-preview p { display: -webkit-box; margin: 7px 0 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 5; color: #344052; font-family: "Source Serif 4", Georgia, serif; font-size: 11px; line-height: 1.55; }
 .agent-compose textarea { min-height: 116px; resize: vertical; padding: 12px; border: 1px solid var(--line-strong); border-radius: 2px; color: var(--ink); font-size: 11px; line-height: 1.6; }
 .agent-compose .button { margin-top: 16px; }
+.initial-one-click .button { margin-top: 2px; }
 .agent-context { display: grid; gap: 7px; margin: 0 0 16px; padding: 12px; border: 1px solid var(--line); background: #f8f7f3; }
 .agent-context > label:first-child { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; color: var(--ink); font-size: 10px; font-weight: 750; }
 .agent-context select { min-width: 0; padding: 8px 30px 8px 9px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); font-size: 10px; }

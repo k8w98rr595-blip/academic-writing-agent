@@ -15,6 +15,8 @@ type Props = {
   instruction: string;
   contextScope: AgentContextScope;
   fullDocumentConfirmed: boolean;
+  initialOneClickAvailable: boolean;
+  initialOneClickTargetText: string;
   busy: boolean;
   onToggleCollapsed: () => void;
   onTab: (tab: InspectorTab) => void;
@@ -22,6 +24,7 @@ type Props = {
   onContextScope: (value: AgentContextScope) => void;
   onFullDocumentConfirmed: (value: boolean) => void;
   onAnalyze: () => void;
+  onInitialOneClick: () => void;
   onPropose: () => void;
   onAccept: (patch: Patch) => void;
   onReject: (patch: Patch) => void;
@@ -49,7 +52,7 @@ function percentage(value: number | null): string {
   return typeof value === "number" ? `${value}%` : "—";
 }
 
-function CurrentDetectionPanel({ result, stale, busy, onAnalyze, onTab }: { result: PangramDetectionResult; stale: boolean; busy: boolean; onAnalyze: () => void; onTab: (tab: InspectorTab) => void }) {
+function CurrentDetectionPanel({ result, stale, busy, initialOneClickAvailable, onAnalyze, onInitialOneClick, onTab }: { result: PangramDetectionResult; stale: boolean; busy: boolean; initialOneClickAvailable: boolean; onAnalyze: () => void; onInitialOneClick: () => void; onTab: (tab: InspectorTab) => void }) {
   const warnings = result.warnings || [];
   const failed = result.status === "failed";
   const comparison = result.riskComparison;
@@ -69,13 +72,17 @@ function CurrentDetectionPanel({ result, stale, busy, onAnalyze, onTab }: { resu
     {comparison ? <div className={`risk-comparison ${comparison.changePercentagePoints > 0 ? "increased" : ""}`}><span>修改前后风险变化</span><strong>{comparison.beforePercent}% → {comparison.afterPercent}%</strong><small>{comparison.changePercentagePoints > 0 ? "+" : ""}{comparison.changePercentagePoints} 个百分点；如实显示，不代表修改必然降低风险。</small></div> : null}
     {warnings.length ? <section className="detection-warnings"><h3>检测说明</h3><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></section> : null}
     {stale ? <div className="stale-notice"><Clock3 size={18} /><div><strong>检测结果已过期</strong><span>文稿在本次检测后发生了修改，旧范围不会继续高亮当前版本。</span><button onClick={onAnalyze}>重新检测当前版本</button></div></div> : null}
-    {!failed && !stale && result.spans.length ? <button className="button primary wide" onClick={() => onTab("agent")}>选择蓝色片段进入写作助手</button> : <button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "重新运行 AI 写作风险检测"}</button>}
+    {!failed && !stale && result.spans.length ? initialOneClickAvailable
+      ? <button className="button primary wide" disabled={busy} onClick={onInitialOneClick}>{busy ? "正在生成并应用..." : "一键降低"}</button>
+      : <button className="button primary wide" onClick={() => onTab("agent")}>选择蓝色片段进入写作助手</button>
+      : <button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "重新运行 AI 写作风险检测"}</button>}
+    {initialOneClickAvailable ? <p className="one-click-note">首次使用会改写当前选中片段；没有选区时处理风险最高的标记片段。点击后直接保存为可恢复的新版本，不会自动复检，也不承诺检测结果归零。</p> : null}
     <p className="detection-cost-note">{result.isMock ? "当前演示检测不会产生 Pangram 费用。切换到真实 Pangram 后，只有你明确点击检测才会提交可能计费的任务。" : "真实 Pangram 检测按量计费。本次检测由你明确点击发起；编辑和保存不会自动复检。"}</p>
     <p className="inspector-disclaimer">{mockDisclaimer(result.isMock, result.disclaimer)}</p>
   </div>;
 }
 
-function DetectionPanel({ document, busy, onAnalyze, onTab }: Pick<Props, "document" | "busy" | "onAnalyze" | "onTab">) {
+function DetectionPanel({ document, busy, initialOneClickAvailable, onAnalyze, onInitialOneClick, onTab }: Pick<Props, "document" | "busy" | "initialOneClickAvailable" | "onAnalyze" | "onInitialOneClick" | "onTab">) {
   const analysis = document.analysis;
   const result = analysis?.result;
   if (!result) {
@@ -84,7 +91,7 @@ function DetectionPanel({ document, busy, onAnalyze, onTab }: Pick<Props, "docum
   if (!("aiGeneratedPercent" in result)) {
     return <LegacyDetectionPanel result={result} stale={Boolean(analysis?.isStale)} onAnalyze={onAnalyze} />;
   }
-  return <CurrentDetectionPanel result={result} stale={Boolean(analysis?.isStale)} busy={busy} onAnalyze={onAnalyze} onTab={onTab} />;
+  return <CurrentDetectionPanel result={result} stale={Boolean(analysis?.isStale)} busy={busy} initialOneClickAvailable={initialOneClickAvailable} onAnalyze={onAnalyze} onInitialOneClick={onInitialOneClick} onTab={onTab} />;
 }
 
 function AgentContextControls(props: Pick<Props, "contextScope" | "fullDocumentConfirmed" | "onContextScope" | "onFullDocumentConfirmed">) {
@@ -92,7 +99,7 @@ function AgentContextControls(props: Pick<Props, "contextScope" | "fullDocumentC
   return <div className="agent-context"><label htmlFor="agent-context-scope">上下文范围<select id="agent-context-scope" value={props.contextScope} onChange={(event) => props.onContextScope(event.target.value as AgentContextScope)}>{AGENT_CONTEXT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><small>{active.description}</small>{props.contextScope === "document" ? <label className="context-confirm"><input type="checkbox" checked={props.fullDocumentConfirmed} onChange={(event) => props.onFullDocumentConfirmed(event.target.checked)} /><span>我确认将整篇文稿作为本轮参考上下文发送给 DeepSeek。Agent 仍只修改当前目标片段。</span></label> : null}</div>;
 }
 
-function AgentPanel(props: Pick<Props, "selectedText" | "pendingPatch" | "instruction" | "contextScope" | "fullDocumentConfirmed" | "busy" | "onInstruction" | "onContextScope" | "onFullDocumentConfirmed" | "onPropose" | "onAccept" | "onReject">) {
+function AgentPanel(props: Pick<Props, "selectedText" | "pendingPatch" | "instruction" | "contextScope" | "fullDocumentConfirmed" | "initialOneClickAvailable" | "initialOneClickTargetText" | "busy" | "onInstruction" | "onContextScope" | "onFullDocumentConfirmed" | "onInitialOneClick" | "onPropose" | "onAccept" | "onReject">) {
   const { selectedText, pendingPatch, instruction, contextScope, fullDocumentConfirmed, busy, onInstruction, onPropose, onAccept, onReject } = props;
   const contextBlocked = contextScope === "document" && !fullDocumentConfirmed;
   if (pendingPatch) {
@@ -103,6 +110,9 @@ function AgentPanel(props: Pick<Props, "selectedText" | "pendingPatch" | "instru
       ? `${pendingPatch.validatorModelVersion} 已完成语义安全校验`
       : pendingPatch.protectedStatus;
     return <div className="patch-panel"><div className="patch-title"><div><span className="eyebrow">REVIEWABLE PATCH</span><h2>建议修改 · 版本 {pendingPatch.revisionNumber || 1}</h2><p>{providerLabel}{pendingPatch.contextCharacters ? ` · 本轮上下文 ${pendingPatch.contextCharacters.toLocaleString()} 字符` : ""}</p></div></div><section className="patch-comparison"><label>原文<blockquote>{pendingPatch.originalText}</blockquote></label><span className="patch-arrow">→</span><label>建议稿<blockquote className="suggested">{pendingPatch.revisedText}</blockquote></label></section><details className="patch-reason" open><summary>修改说明</summary><p>{pendingPatch.reason}</p></details><div className="protected-row"><ShieldCheck size={18} /><span>{validatorLabel}</span></div><section className="agent-refine"><h3>继续调整这份建议</h3><p>输入下一轮要求。Agent 会基于当前建议继续修改，但最终补丁仍以原文为锚点。</p><AgentContextControls {...props} /><label>继续修改要求<textarea value={instruction} onChange={(event) => onInstruction(event.target.value)} placeholder="例如：再简洁一点，但保留第一句话和全部专业术语。" /></label><button className="button secondary wide" disabled={busy || contextBlocked || instruction.trim().length < 2} onClick={onPropose}>{busy ? "正在准备下一版..." : "生成下一版建议"}</button></section><div className="patch-actions"><button className="button secondary" disabled={busy} onClick={() => onReject(pendingPatch)}><X size={17} />保留原文</button><button className="button primary" disabled={busy || pendingPatch.originalText === pendingPatch.revisedText} onClick={() => onAccept(pendingPatch)}><Check size={17} />接受此修改</button></div></div>;
+  }
+  if (props.initialOneClickAvailable) {
+    return <div className="agent-compose initial-one-click"><div className="compose-intro"><Sparkles size={25} /><span className="eyebrow">FIRST PASS</span><h2>先完成第一次自然化修改</h2><p>系统会处理当前选中片段；没有选区时，自动选择风险最高的标记片段。真实 DeepSeek 必须保持原意、主题、立场、数据、引文和专业术语不变，并通过独立语义校验。</p></div><div className="selection-preview"><strong>本次处理内容</strong><p>{props.initialOneClickTargetText || "将处理风险最高的标记段落。"}</p></div><button className="button primary wide" disabled={busy} onClick={props.onInitialOneClick}>{busy ? "正在生成并应用..." : "一键降低"}</button><p className="one-click-note">真实模式下，点击即接受通过校验的首次修改，并保存为可恢复的新版本；Mock 演示模式只生成预览。完成后进入当前的逐条审阅模式。检测器存在误差，因此不会承诺“AI 率为零”，也不会自动发起付费复检。</p></div>;
   }
   return <div className="agent-compose"><div className="compose-intro"><Sparkles size={25} /><span className="eyebrow">DEEPSEEK WRITING AGENT</span><h2>由作者控制每一次修改</h2><p>点击蓝色风险片段或在论文中选择文字，再说明你想改进的方向。Agent 只提出可撤销补丁，不会自动应用修改、自动复检或根据检测分数循环改写。</p></div><div className="selection-preview"><strong>当前选中内容</strong><p>{selectedText || "尚未选择文本，将审阅当前活动段落。"}</p></div><AgentContextControls {...props} /><label>修改要求<textarea value={instruction} onChange={(event) => onInstruction(event.target.value)} placeholder="例如：让论证更具体，并说明证据如何支持主张，但不要改变原意。" /></label><button className="button primary wide" disabled={busy || contextBlocked || instruction.trim().length < 2} onClick={onPropose}>{busy ? "正在准备补丁..." : "生成可审阅补丁"}</button></div>;
 }
