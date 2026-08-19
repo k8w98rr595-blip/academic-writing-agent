@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlignLeft, Bold, ChevronDown, Download, FileClock, FileText, History, Italic, ListTree, LogOut, Plus, Redo2, Save, ShieldCheck, Sparkles, Trash2, Undo2 } from "lucide-react";
 import { api, downloadExport } from "@/lib/api";
-import { buildRewriteMessage, INITIAL_ONE_CLICK_INSTRUCTION, selectInitialRewriteTarget, type AgentContextScope } from "@/lib/agent";
+import { buildRewriteMessage, selectInitialRewriteParagraphs, type AgentContextScope } from "@/lib/agent";
 import type { DocumentListItem, EvidenceSpan, PaperDocument, Paragraph, Patch, VersionSummary } from "@/lib/types";
 import { Inspector, type InspectorTab } from "./Inspector";
 import { PaperEditor } from "./PaperEditor";
@@ -43,23 +43,22 @@ export function Workspace(props: Props) {
   const spans: EvidenceSpan[] = !stale && detectionResult && "aiGeneratedPercent" in detectionResult
     ? detectionResult.spans
     : [];
-  const initialOneClickTarget = useMemo(
-    () => selectInitialRewriteTarget(paragraphs, spans, selection),
-    [paragraphs, spans, selection],
+  const initialOneClickParagraphs = useMemo(
+    () => selectInitialRewriteParagraphs(paragraphs, spans),
+    [paragraphs, spans],
   );
   const initialOneClickAvailable = Boolean(
-    initialOneClickTarget
+    initialOneClickParagraphs.length
     && !dirty
     && !pendingPatch
-    && !document.patches.some((patch) => patch.status === "accepted")
     && document.analysis
     && !document.analysis.isStale
     && detectionResult
     && "aiGeneratedPercent" in detectionResult
     && detectionResult.status === "success",
   );
-  const initialOneClickTargetText = initialOneClickTarget
-    ? initialOneClickTarget.text || paragraphs.find((paragraph) => paragraph.id === initialOneClickTarget.paragraphId)?.text || ""
+  const initialOneClickTargetText = initialOneClickParagraphs.length
+    ? `将一次处理本轮检测标记的 ${initialOneClickParagraphs.length} 个风险段落。`
     : "";
 
   useEffect(() => {
@@ -167,44 +166,36 @@ export function Workspace(props: Props) {
   }
 
   async function initialOneClickRewrite() {
-    if (!initialOneClickAvailable || !initialOneClickTarget) return;
+    if (!initialOneClickAvailable) return;
     setBusy(true);
     setMessage("");
     setTab("agent");
     try {
       const current = await saveDraft();
-      const created = await api<{ rewriteSession: { id: string } }>(`/api/v1/documents/${current.id}/rewrite-sessions`, {
+      const response = await api<{
+        applied: boolean;
+        document?: PaperDocument;
+        patch?: Patch;
+        targetParagraphCount: number;
+        revisedParagraphCount?: number;
+      }>(`/api/v1/documents/${current.id}/first-pass-rewrite`, {
         method: "POST",
         body: JSON.stringify({ version_id: current.currentVersion.id }),
       });
-      const body = buildRewriteMessage({
-        instruction: INITIAL_ONE_CLICK_INSTRUCTION,
-        selection: initialOneClickTarget,
-        pendingPatch: null,
-        contextScope: "paragraph",
-        fullDocumentConfirmed: false,
-      });
-      const proposed = await api<{ patch: Patch }>(`/api/v1/rewrite-sessions/${created.rewriteSession.id}/messages`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      setPendingPatch(proposed.patch);
-      setRewriteSessionId(proposed.patch.rewriteSessionId || created.rewriteSession.id);
-      if (proposed.patch.isMock) {
-        setMessage("演示模式只生成可审阅补丁，不会直接改动正文。请检查建议后手动接受。");
+      if (!response.applied && response.patch) {
+        setPendingPatch(response.patch);
+        setRewriteSessionId(response.patch.rewriteSessionId || "");
+        setMessage(`演示模式已检查 ${response.targetParagraphCount} 个风险段落，只生成可审阅预览，不会直接改动正文。`);
         return;
       }
-      const accepted = await api<{ document: PaperDocument }>(`/api/v1/patches/${proposed.patch.id}/accept`, {
-        method: "POST",
-        body: JSON.stringify({ expected_base_version_id: proposed.patch.baseVersionId }),
-      });
-      onDocumentChange(accepted.document);
-      setParagraphs(accepted.document.currentVersion.paragraphs);
+      if (!response.document) throw new Error("首次自然化修改没有返回新版本");
+      onDocumentChange(response.document);
+      setParagraphs(response.document.currentVersion.paragraphs);
       setPendingPatch(null);
       setRewriteSessionId("");
       setContextScope("selection");
       setFullDocumentConfirmed(false);
-      setMessage("首次自然化修改已保存为新版本。检测结果已过期；你现在可以使用逐条审阅模式继续修改。");
+      setMessage(`已检查 ${response.targetParagraphCount} 个风险段落，并将 ${response.revisedParagraphCount || 0} 个安全修改保存为新版本。检测结果已过期；现在进入逐条审阅模式。`);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "首次修改未完成");
     } finally {

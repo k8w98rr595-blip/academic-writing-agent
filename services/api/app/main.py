@@ -16,7 +16,7 @@ from .config import get_settings
 from .database import get_db, init_db, session_scope
 from .documents import DOCX_MIME, build_docx, extract_docx_text, validate_docx_upload
 from .models import AnalysisRun, Document, DocumentVersion, JobRecord, PatchRecord, RewriteSession, SessionRecord, utcnow
-from .providers import detection_content_fingerprint, propose_rewrite, run_detection
+from .providers import detection_content_fingerprint, propose_first_pass_rewrites, propose_rewrite, run_detection
 from .provider_usage import (
     ProviderCallSpec,
     cancel_unused_reservations,
@@ -28,6 +28,7 @@ from .provider_usage import (
 from .request_limits import RequestBodyLimitMiddleware
 from .schemas import (
     DocumentUpdateRequest,
+    FirstPassRewriteRequest,
     LoginRequest,
     LoginResponse,
     PatchDecisionRequest,
@@ -374,6 +375,164 @@ def create_rewrite_session(
     audit(db, owner, "rewrite.started", document.id, rewriteSessionId=session.id)
     db.commit()
     return {"rewriteSession": {"id": session.id, "documentId": document.id, "versionId": session.version_id}}
+
+
+@app.post("/api/v1/documents/{document_id}/first-pass-rewrite", status_code=status.HTTP_201_CREATED)
+async def first_pass_rewrite(
+    document_id: str,
+    payload: FirstPassRewriteRequest,
+    owner: str = Depends(current_owner),
+    db: Session = Depends(get_db),
+):
+    document = get_owned_document(db, owner, document_id)
+    if document.current_version_id != payload.version_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="First pass must use the current version")
+    version = get_version(db, document, payload.version_id)
+    analysis = db.scalar(
+        select(AnalysisRun)
+        .where(
+            AnalysisRun.document_id == document.id,
+            AnalysisRun.version_id == version.id,
+            AnalysisRun.status == "completed",
+        )
+        .order_by(AnalysisRun.created_at.desc())
+        .limit(1)
+    )
+    result = analysis.result if analysis and isinstance(analysis.result, dict) else None
+    spans = result.get("spans") if result and result.get("status") == "success" else None
+    if not isinstance(spans, list):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A current successful detection is required")
+    risk_ids = {
+        span.get("paragraphId")
+        for span in spans
+        if isinstance(span, dict)
+        and span.get("classification") in {"ai_generated", "ai_assisted"}
+        and isinstance(span.get("paragraphId"), str)
+    }
+    passages = [
+        {"paragraphId": paragraph["id"], "originalText": paragraph["text"]}
+        for paragraph in version.paragraphs
+        if paragraph["id"] in risk_ids
+    ]
+    if not passages:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="No marked risk paragraphs are available")
+    total_characters = sum(len(item["originalText"]) for item in passages)
+    if total_characters > MAX_AGENT_CONTEXT_CHARACTERS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Marked passages exceed the safe first-pass context limit")
+
+    operation_seed = hashlib.sha256(
+        json.dumps({"versionId": version.id, "passages": passages}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    reservations: dict[str, str] = {}
+    finalized_operations: set[str] = set()
+    if settings.rewrite_mode == "deepseek":
+        reservations = reserve_provider_calls(
+            owner,
+            "DeepSeek",
+            [
+                ProviderCallSpec("rewrite", settings.deepseek_model, f"{operation_seed}:rewrite"),
+                ProviderCallSpec("validation", settings.deepseek_validator_model, f"{operation_seed}:validation"),
+            ],
+        )
+
+    def observe_usage(**observation) -> None:
+        operation = observation.pop("operation")
+        reservation_id = reservations.get(operation)
+        if not reservation_id:
+            return
+        finalize_provider_call(reservation_id, **observation)
+        finalized_operations.add(operation)
+
+    try:
+        proposal = await propose_first_pass_rewrites(
+            passages,
+            idempotency_seed=operation_seed,
+            usage_observer=observe_usage if reservations else None,
+        )
+    finally:
+        cancel_unused_reservations(
+            [reservation_id for operation, reservation_id in reservations.items() if operation not in finalized_operations]
+        )
+    db.refresh(document)
+    if document.current_version_id != version.id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document changed during the first pass")
+
+    rewrite = RewriteSession(id=new_id("rewrite"), document_id=document.id, version_id=version.id)
+    db.add(rewrite)
+    db.flush()
+    if proposal["isMock"]:
+        revision = proposal["revisions"][0]
+        patch = PatchRecord(
+            id=new_id("patch"),
+            rewrite_session_id=rewrite.id,
+            document_id=document.id,
+            base_version_id=version.id,
+            paragraph_id=revision["paragraphId"],
+            original_text=revision["originalText"],
+            revised_text=revision["revisedText"],
+            reason=revision["reason"],
+            protected_status="Citations, numbers, quotations, URLs, and abbreviations preserved",
+        )
+        db.add(patch)
+        audit(db, owner, "patch.proposed", document.id, patchId=patch.id, mock=True, provider=proposal["provider"], model=proposal["modelVersion"])
+        db.commit()
+        return {
+            "applied": False,
+            "patch": {
+                "id": patch.id,
+                "baseVersionId": patch.base_version_id,
+                "paragraphId": patch.paragraph_id,
+                "originalText": patch.original_text,
+                "revisedText": patch.revised_text,
+                "reason": patch.reason,
+                "protectedStatus": patch.protected_status,
+                "status": patch.status,
+                "isMock": True,
+                "provider": proposal["provider"],
+                "modelVersion": proposal["modelVersion"],
+                "validatorModelVersion": None,
+                "rewriteSessionId": rewrite.id,
+                "revisionNumber": 1,
+                "contextScope": "document",
+                "contextCharacters": total_characters,
+                "supersedesPatchId": None,
+            },
+            "targetParagraphCount": len(passages),
+        }
+
+    paragraphs = [dict(item) for item in version.paragraphs]
+    revisions_by_id = {item["paragraphId"]: item for item in proposal["revisions"]}
+    for paragraph in paragraphs:
+        revision = revisions_by_id.get(paragraph["id"])
+        if revision:
+            assert_protected_equal(paragraph["text"], revision["revisedText"])
+            paragraph["text"] = revision["revisedText"]
+    count = validate_paragraphs(paragraphs)
+    create_version(db, document, paragraphs, count, "agent-first-pass")
+    for revision in proposal["revisions"]:
+        patch = PatchRecord(
+            id=new_id("patch"),
+            rewrite_session_id=rewrite.id,
+            document_id=document.id,
+            base_version_id=version.id,
+            paragraph_id=revision["paragraphId"],
+            original_text=revision["originalText"],
+            revised_text=revision["revisedText"],
+            reason=revision["reason"],
+            protected_status="Citations, numbers, quotations, URLs, and abbreviations preserved",
+            status="accepted",
+            decided_at=utcnow(),
+        )
+        db.add(patch)
+        audit(db, owner, "patch.accepted", document.id, patchId=patch.id)
+    audit(db, owner, "document.version", document.id, source="agent-first-pass", wordCount=count)
+    db.commit()
+    return {
+        "applied": True,
+        "document": document_payload(db, document),
+        "targetParagraphCount": len(passages),
+        "revisedParagraphCount": len(proposal["revisions"]),
+    }
 
 
 @app.post("/api/v1/rewrite-sessions/{session_id}/messages", status_code=status.HTTP_201_CREATED)

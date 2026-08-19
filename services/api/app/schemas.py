@@ -31,6 +31,10 @@ class RewriteSessionRequest(BaseModel):
     version_id: str = Field(min_length=3, max_length=64)
 
 
+class FirstPassRewriteRequest(BaseModel):
+    version_id: str = Field(min_length=3, max_length=64)
+
+
 class RewriteMessageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

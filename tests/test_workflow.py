@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from dataclasses import replace
 
 from fastapi.testclient import TestClient
 from docx import Document as WordDocument
@@ -11,6 +12,7 @@ from services.api.app.database import session_scope
 from services.api.app.models import AnalysisRun
 from services.api.app.service import new_id
 from services.api.app.text import assert_protected_equal
+from services.api.app import main as main_module
 
 
 def create_document(client: TestClient, headers: dict[str, str], text: str) -> dict:
@@ -144,6 +146,68 @@ def test_owner_only_mock_workflow(client: TestClient, headers: dict[str, str], c
     deleted = client.delete(f"/api/v1/documents/{document['id']}", headers=headers)
     assert deleted.status_code == 204
     assert client.get(f"/api/v1/documents/{document['id']}", headers=headers).status_code == 404
+
+
+def test_first_pass_mock_returns_reviewable_preview_without_changing_version(
+    client: TestClient, headers: dict[str, str], coursework_text: str
+):
+    document = create_document(client, headers, coursework_text)
+    assert client.post(f"/api/v1/documents/{document['id']}/analyses", headers=headers).status_code == 201
+    response = client.post(
+        f"/api/v1/documents/{document['id']}/first-pass-rewrite",
+        headers=headers,
+        json={"version_id": document["currentVersion"]["id"]},
+    )
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["applied"] is False
+    assert payload["patch"]["isMock"] is True
+    assert payload["patch"]["status"] == "pending"
+    assert payload["targetParagraphCount"] >= 1
+    refreshed = client.get(f"/api/v1/documents/{document['id']}", headers=headers).json()["document"]
+    assert refreshed["currentVersion"]["id"] == document["currentVersion"]["id"]
+    assert refreshed["analysis"]["isStale"] is False
+
+
+def test_first_pass_real_mode_applies_all_safe_revisions_as_one_version(
+    client: TestClient, headers: dict[str, str], coursework_text: str, monkeypatch
+):
+    document = create_document(client, headers, coursework_text)
+    assert client.post(f"/api/v1/documents/{document['id']}/analyses", headers=headers).status_code == 201
+
+    async def fake_first_pass(passages, **_):
+        return {
+            "revisions": [
+                {
+                    **passage,
+                    "revisedText": passage["originalText"].replace("It is important to note that", "Evidence indicates that", 1),
+                    "reason": "Removed formulaic framing.",
+                }
+                for passage in passages
+            ],
+            "isMock": False,
+            "provider": "DeepSeek",
+            "modelVersion": "deepseek-v4-pro",
+            "validatorModelVersion": "deepseek-v4-flash",
+        }
+
+    monkeypatch.setattr(main_module, "settings", replace(main_module.settings, rewrite_mode="deepseek"))
+    monkeypatch.setattr(main_module, "reserve_provider_calls", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(main_module, "propose_first_pass_rewrites", fake_first_pass)
+    response = client.post(
+        f"/api/v1/documents/{document['id']}/first-pass-rewrite",
+        headers=headers,
+        json={"version_id": document["currentVersion"]["id"]},
+    )
+    assert response.status_code == 201, response.text
+    payload = response.json()
+    assert payload["applied"] is True
+    assert payload["document"]["currentVersion"]["number"] == 2
+    assert payload["document"]["currentVersion"]["source"] == "agent-first-pass"
+    assert payload["document"]["analysis"]["isStale"] is True
+    assert payload["revisedParagraphCount"] == payload["targetParagraphCount"]
+    accepted = [patch for patch in payload["document"]["patches"] if patch["status"] == "accepted"]
+    assert len(accepted) == payload["revisedParagraphCount"]
 
 
 def test_stale_manual_save_is_rejected(client: TestClient, headers: dict[str, str], coursework_text: str):

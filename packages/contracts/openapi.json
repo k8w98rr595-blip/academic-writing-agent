@@ -611,6 +611,69 @@
         }
       }
     },
+    "/api/v1/documents/{document_id}/first-pass-rewrite": {
+      "post": {
+        "summary": "First Pass Rewrite",
+        "operationId": "first_pass_rewrite_api_v1_documents__document_id__first_pass_rewrite_post",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FirstPassRewriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/rewrite-sessions/{session_id}/messages": {
       "post": {
         "summary": "Rewrite Message",
@@ -961,6 +1024,21 @@
           "paragraphs"
         ],
         "title": "DocumentUpdateRequest"
+      },
+      "FirstPassRewriteRequest": {
+        "properties": {
+          "version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version_id"
+        ],
+        "title": "FirstPassRewriteRequest"
       },
       "HTTPValidationError": {
         "properties": {

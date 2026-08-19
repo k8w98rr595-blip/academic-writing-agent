@@ -19,7 +19,7 @@ from services.api.app.providers.detectors import _map_windows_to_paragraphs, run
 from services.api.app.providers import detectors as detector_module
 from services.api.app.providers import rewriters as rewriter_module
 from services.api.app.providers.http_client import post_json_with_retry
-from services.api.app.providers.rewriters import _mock_rewrite, propose_rewrite
+from services.api.app.providers.rewriters import _mock_rewrite, propose_first_pass_rewrites, propose_rewrite
 from services.api.app.request_limits import RequestBodyLimitMiddleware
 from services.api.app.security import SlidingWindowLimiter, audit
 from services.api.app.storage import LocalObjectStorage, validate_object_key
@@ -164,6 +164,46 @@ def test_deepseek_v4_rewrite_uses_pro_then_flash_validation(monkeypatch: pytest.
         ("rewrite", 120, 40),
         ("validation", 80, 12),
     ]
+
+    monkeypatch.setenv("REWRITE_MODE", "mock")
+    get_settings.cache_clear()
+
+
+def test_first_pass_uses_academic_humanizer_rules_and_validates_every_paragraph(monkeypatch: pytest.MonkeyPatch):
+    calls: list[dict] = []
+    responses = [
+        {
+            "choices": [{"message": {"content": json.dumps({"revisions": [
+                {"paragraphId": "p1", "revisedText": "Evidence indicates that NASA measured 42% [3].", "reason": "Removed formulaic framing."},
+                {"paragraphId": "p2", "revisedText": "The policy may help, but the evidence remains limited.", "reason": "Varied the rhythm without changing certainty."},
+            ]})}}],
+        },
+        {
+            "choices": [{"message": {"content": json.dumps({"items": [
+                {"paragraphId": "p1", "approved": True, "meaningPreserved": True, "factsAdded": False, "protectedContentPreserved": True, "issues": []},
+                {"paragraphId": "p2", "approved": True, "meaningPreserved": True, "factsAdded": False, "protectedContentPreserved": True, "issues": []},
+            ]})}}],
+        },
+    ]
+
+    async def fake_post(url: str, *, payload: dict, **_: object):
+        calls.append(payload)
+        return httpx.Response(200, json=responses.pop(0), request=httpx.Request("POST", url))
+
+    monkeypatch.setenv("REWRITE_MODE", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "contract-test-key")
+    monkeypatch.setattr(rewriter_module, "post_json_with_retry", fake_post)
+    get_settings.cache_clear()
+    result = asyncio.run(propose_first_pass_rewrites([
+        {"paragraphId": "p1", "originalText": "It is important to note that NASA measured 42% [3]."},
+        {"paragraphId": "p2", "originalText": "It could potentially be argued that the policy may help, but the evidence remains limited."},
+    ], idempotency_seed="first-pass-contract"))
+    assert result["isMock"] is False
+    assert [item["paragraphId"] for item in result["revisions"]] == ["p1", "p2"]
+    assert len(calls) == 2
+    assert "forced\nthree-part lists" in calls[0]["messages"][0]["content"]
+    assert json.loads(calls[0]["messages"][1]["content"])["passages"][0]["paragraphId"] == "p1"
+    assert calls[1]["model"] == "deepseek-v4-flash"
 
     monkeypatch.setenv("REWRITE_MODE", "mock")
     get_settings.cache_clear()
