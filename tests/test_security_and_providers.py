@@ -283,6 +283,42 @@ def test_production_deepseek_rejects_an_untrusted_api_host(monkeypatch: pytest.M
     get_settings.cache_clear()
 
 
+def test_production_disabled_billing_does_not_require_a_live_checkout_url(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://paperlight.example")
+    monkeypatch.setenv("REWRITE_MODE", "mock")
+    monkeypatch.setenv("BILLING_MODE", "disabled")
+    monkeypatch.setenv("BILLING_APP_URL", "http://127.0.0.1:3000")
+    get_settings.cache_clear()
+    try:
+        settings = get_settings()
+        assert settings.billing_mode == "disabled"
+    finally:
+        monkeypatch.setenv("APP_ENV", "test")
+        monkeypatch.setenv("ALLOWED_ORIGINS", "http://testserver")
+        get_settings.cache_clear()
+
+
+def test_production_stripe_rejects_test_mode_server_keys(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://paperlight.example")
+    monkeypatch.setenv("REWRITE_MODE", "mock")
+    monkeypatch.setenv("BILLING_MODE", "stripe")
+    monkeypatch.setenv("BILLING_APP_URL", "https://paperlight.example")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk" + "_test_" + "placeholdervalue0001")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec" + "_placeholdervalue0001")
+    monkeypatch.setenv("STRIPE_PRO_MONTHLY_PRICE_ID", "price_placeholder")
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="live-mode"):
+            get_settings()
+    finally:
+        monkeypatch.setenv("APP_ENV", "test")
+        monkeypatch.setenv("ALLOWED_ORIGINS", "http://testserver")
+        monkeypatch.setenv("BILLING_MODE", "disabled")
+        get_settings.cache_clear()
+
+
 def test_provider_request_retries_once_on_timeout(monkeypatch: pytest.MonkeyPatch):
     attempts = 0
 

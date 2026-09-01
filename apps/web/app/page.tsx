@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, clearSession, fetchDocument, sessionToken, storeSession } from "@/lib/api";
+import { api, clearSession, fetchDocument, isQuotaError, sessionToken, storeSession } from "@/lib/api";
 import type { DocumentListItem, PaperDocument } from "@/lib/types";
 import { CreateDocument } from "@/components/CreateDocument";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Workspace } from "@/components/Workspace";
+import { BillingPanel } from "@/components/BillingPanel";
 
 export default function HomePage() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -14,6 +15,7 @@ export default function HomePage() {
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [showBilling, setShowBilling] = useState(false);
 
   const refreshList = useCallback(async (preferredId?: string) => {
     const payload = await api<{ documents: DocumentListItem[] }>("/api/v1/documents");
@@ -36,6 +38,12 @@ export default function HomePage() {
       setAuthenticated(false);
     });
   }, [refreshList]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("billing")) {
+      setShowBilling(true);
+    }
+  }, []);
 
   async function login(email: string, password: string, totpCode: string) {
     setBusy(true);
@@ -75,17 +83,19 @@ export default function HomePage() {
       await refreshList(result.document.id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to create document");
+      if (isQuotaError(cause)) setShowBilling(true);
     } finally {
       setBusy(false);
     }
   }
 
   if (!authenticated) return <LoginScreen busy={busy} error={error} onLogin={login} />;
+  const billing = showBilling ? <BillingPanel onClose={() => setShowBilling(false)} /> : null;
   if (showCreate || !activeDocument) {
-    return <CreateDocument busy={busy} error={error} documents={documents} onCreate={createDocument} onOpen={(id) => refreshList(id)} onLogout={logout} />;
+    return <><CreateDocument busy={busy} error={error} documents={documents} onCreate={createDocument} onOpen={(id) => refreshList(id)} onBilling={() => setShowBilling(true)} onLogout={logout} />{billing}</>;
   }
   return (
-    <Workspace
+    <><Workspace
       document={activeDocument}
       documents={documents}
       onDocumentChange={setActiveDocument}
@@ -93,7 +103,8 @@ export default function HomePage() {
       onOpen={(id) => refreshList(id)}
       onNew={() => setShowCreate(true)}
       onDeleted={() => refreshList()}
+      onBilling={() => setShowBilling(true)}
       onLogout={logout}
-    />
+    />{billing}</>
   );
 }

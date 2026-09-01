@@ -1,12 +1,12 @@
 # Paperlight — Academic Writing Agent
 
-Paperlight is an owner-only workspace focused on AI writing-risk detection and author-controlled revision of English undergraduate coursework while preserving citations, numbers, quotations, and author control. It provides a patch-based writing Agent, editable AI-risk evidence, immutable versions, Word import/export, and seven-day deletion. Plagiarism/similarity checking is intentionally outside the product scope.
+Paperlight is an owner-only workspace focused on AI writing-risk detection and author-controlled revision of English undergraduate coursework while preserving citations, numbers, quotations, and author control. It provides a patch-based writing Agent, editable AI-risk evidence, immutable versions, Word import/export, seven-day deletion, and a provider-neutral Free/Pro entitlement and quota layer. Plagiarism/similarity checking is intentionally outside the product scope.
 
 The writing Agent is a multi-turn, author-reviewed workflow. The owner selects a risky passage, states a writing-quality goal, reviews the proposed patch, and may ask the same rewrite session for another revision before accepting or rejecting it. Follow-up revisions keep the original passage as an immutable safety anchor. Context is derived by the server from the selected immutable document version; full-document context requires an explicit confirmation. The Agent never auto-applies a patch, auto-runs detection, or optimizes against a detector score.
 
 Local development defaults to deterministic mocks for product testing. Mock results are always labeled as demonstrations and are not Turnitin results or proof of authorship. The owner-only production deployment currently uses real Pangram 4 detection after a controlled synthetic acceptance; its output remains a probabilistic internal risk signal.
 
-The current production stage intentionally uses password-only owner authentication (`REQUIRE_TOTP=0`). Paid provider work is guarded by a content-free usage ledger, an hourly warning/hard limit, duplicate-call protection, and a failure circuit breaker. These controls do not replace the billing dashboards and do not make the deployment suitable for public or student accounts.
+The current production stage intentionally uses password-only owner authentication (`REQUIRE_TOTP=0`) and keeps customer charging off (`BILLING_MODE=disabled`). Paid provider work is guarded by a content-free usage ledger, while product billing has centralized Plan/Entitlement/Quota/Usage, a non-production fake Checkout, and an optional Stripe Checkout/Portal/Webhook adapter. These controls do not make the deployment suitable for public or student accounts.
 
 ## Local development
 
@@ -39,6 +39,8 @@ Provider keys are server-only. Detection has one active adapter boundary: determ
 - Database/queue/object storage: local Docker Compose for development; managed PostgreSQL, Redis, and S3-compatible storage for public rollout.
 
 This deployment remains private to the configured owner. Real Pangram 4 detection and DeepSeek rewrite are enabled. Public registration, payments and student rollout remain disabled until stronger authentication, independent benchmarking, account-specific data governance, billing monitoring and compliance gates are complete.
+
+Billing configuration, API/state semantics, Stripe setup and launch gates are documented in [`docs/BILLING.md`](docs/BILLING.md). The default does not create a Stripe request or charge.
 
 Create a replacement owner-password verifier without displaying or storing plaintext with `python scripts/hash_owner_password.py`. The ignored output contains only an ACL-restricted Argon2id verifier for `OWNER_PASSWORD_HASH`; production password rotation still requires the owner to update Railway and verify a fresh login.
 

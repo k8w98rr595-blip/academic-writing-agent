@@ -15,6 +15,7 @@ RUN addgroup --system paperlight \
     && rm -rf /var/lib/apt/lists/*
 COPY services/api/requirements.txt /app/services/api/requirements.txt
 RUN pip install --no-cache-dir -r /app/services/api/requirements.txt
+COPY alembic.ini /app/alembic.ini
 COPY services /app/services
 COPY infra/docker-entrypoint.sh /usr/local/bin/paperlight-entrypoint
 RUN chmod 0755 /usr/local/bin/paperlight-entrypoint \

@@ -34,9 +34,9 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 
 
 def init_db() -> None:
-    from . import models  # noqa: F401
+    from .migration_runner import upgrade_database
 
-    Base.metadata.create_all(bind=engine)
+    upgrade_database(engine)
 
 
 def get_db():

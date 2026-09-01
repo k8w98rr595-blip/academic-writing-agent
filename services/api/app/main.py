@@ -13,6 +13,26 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
+from .billing import (
+    backfill_document_quotas,
+    billing_summary,
+    create_checkout_session,
+    create_portal_session,
+    ensure_billing_account,
+    enforce_document_capacity,
+    estimate_document_bytes,
+    finalize_product_usage,
+    process_stripe_event,
+    product_request_key,
+    queue_product_usage,
+    record_product_event,
+    require_entitlement,
+    reserve_product_usage,
+    set_test_plan,
+    sync_document_quota,
+    verify_stripe_event,
+)
+from .billing_catalog import METER_DETECTION, METER_REWRITE
 from .database import get_db, init_db, session_scope
 from .documents import DOCX_MIME, build_docx, extract_docx_text, validate_docx_upload
 from .models import AnalysisRun, Document, DocumentVersion, JobRecord, PatchRecord, RewriteSession, SessionRecord, utcnow
@@ -28,6 +48,11 @@ from .provider_usage import (
 from .request_limits import RequestBodyLimitMiddleware
 from .schemas import (
     DocumentUpdateRequest,
+    BillingEventRequest,
+    BillingSessionRequest,
+    BillingSessionResponse,
+    BillingSummaryResponse,
+    BillingTestPlanRequest,
     FirstPassRewriteRequest,
     LoginRequest,
     LoginResponse,
@@ -60,6 +85,8 @@ async def lifespan(_: FastAPI):
     with session_scope() as db:
         cleanup_expired_documents(db)
         cleanup_provider_usage_events(db)
+        ensure_billing_account(db, settings.owner_email)
+        backfill_document_quotas(db)
     yield
 
 
@@ -71,7 +98,7 @@ app.add_middleware(
     allow_origins=list(settings.allowed_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Idempotency-Key"],
     expose_headers=["Content-Disposition", "X-Request-ID"],
 )
 
@@ -118,6 +145,7 @@ def health() -> dict:
                 settings.detector_data_processing_acknowledged if settings.detector_mode == "pangram" else False
             ),
         },
+        "billing": {"mode": settings.billing_mode, "checkoutEnabled": settings.billing_mode in {"test", "stripe"}},
     }
 
 
@@ -213,6 +241,77 @@ def get_provider_usage_summary(owner: str = Depends(current_owner), db: Session 
     return summary
 
 
+@app.get("/api/v1/billing/summary", response_model=BillingSummaryResponse)
+def get_billing_summary(owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+    summary = billing_summary(db, owner)
+    audit(db, owner, "billing.summary_viewed")
+    db.commit()
+    return summary
+
+
+@app.post("/api/v1/billing/events", status_code=status.HTTP_204_NO_CONTENT)
+def create_billing_event(
+    payload: BillingEventRequest,
+    owner: str = Depends(current_owner),
+    db: Session = Depends(get_db),
+):
+    record_product_event(db, owner, payload.event_name, payload.trigger)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/v1/billing/checkout-session", response_model=BillingSessionResponse)
+def start_billing_checkout(
+    payload: BillingSessionRequest,
+    owner: str = Depends(current_owner),
+    db: Session = Depends(get_db),
+):
+    record_product_event(db, owner, "upgrade_clicked", payload.trigger, targetPlan="pro")
+    db.commit()
+    url = create_checkout_session(db, owner, payload.trigger)
+    audit(db, owner, "billing.checkout_started")
+    db.commit()
+    return {"url": url}
+
+
+@app.post("/api/v1/billing/portal-session", response_model=BillingSessionResponse)
+def start_billing_portal(
+    payload: BillingSessionRequest,
+    owner: str = Depends(current_owner),
+    db: Session = Depends(get_db),
+):
+    url = create_portal_session(db, owner, payload.trigger)
+    audit(db, owner, "billing.portal_started")
+    db.commit()
+    return {"url": url}
+
+
+@app.post("/api/v1/billing/test/plan", status_code=status.HTTP_204_NO_CONTENT)
+def change_test_plan(
+    payload: BillingTestPlanRequest,
+    owner: str = Depends(current_owner),
+    db: Session = Depends(get_db),
+):
+    set_test_plan(db, owner, payload.plan)
+    audit(db, owner, "billing.test_plan_changed")
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/api/v1/billing/webhook", include_in_schema=False)
+async def stripe_billing_webhook(
+    request: Request,
+    stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
+    db: Session = Depends(get_db),
+):
+    payload = await request.body()
+    if len(payload) > 256 * 1024:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Stripe webhook is too large")
+    event = verify_stripe_event(payload, stripe_signature or "")
+    outcome = process_stripe_event(db, event, payload)
+    return {"received": True, "outcome": outcome}
+
+
 @app.post("/api/v1/documents", status_code=status.HTTP_201_CREATED)
 async def create_document(
     title: str = Form(default="Untitled coursework"),
@@ -221,19 +320,29 @@ async def create_document(
     owner: str = Depends(current_owner),
     db: Session = Depends(get_db),
 ):
+    require_entitlement(db, owner, "core_workspace")
     if len(title.strip()) < 2 or len(title) > 180:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid document title")
     source = "text"
     original_payload: bytes | None = None
     if file:
+        require_entitlement(db, owner, "docx_import_export")
         original_payload = await file.read(5 * 1024 * 1024 + 1)
         validate_docx_upload(file.filename or "", file.content_type or "", original_payload)
         text = extract_docx_text(original_payload)
         source = "docx"
     normalized_count = validate_english_coursework(text)
     paragraphs = paragraphs_from_text(text)
+    content_bytes = estimate_document_bytes(paragraphs)
+    enforce_document_capacity(
+        db,
+        owner,
+        additional_documents=1,
+        additional_storage_bytes=content_bytes + (len(original_payload) if original_payload else 0),
+    )
     document = create_document_record(db, owner, title.strip(), paragraphs, normalized_count, source)
     db.flush()
+    sync_document_quota(db, document, paragraphs, original_bytes=len(original_payload) if original_payload else 0)
     if original_payload:
         get_object_storage().put(f"documents/{document.id}/original.docx", original_payload)
     audit(db, owner, "document.created", document.id, source=source, wordCount=normalized_count)
@@ -284,28 +393,50 @@ def restore_document_version(
 
 
 @app.post("/api/v1/documents/{document_id}/analyses", status_code=status.HTTP_201_CREATED)
-async def analyze_document(document_id: str, owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+async def analyze_document(
+    document_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    owner: str = Depends(current_owner),
+    db: Session = Depends(get_db),
+):
+    require_entitlement(db, owner, "ai_detection")
     document = get_owned_document(db, owner, document_id)
     version = get_version(db, document)
     operation_seed = detection_content_fingerprint(version.paragraphs, settings.pangram_model)
+    product_usage_reservation_id = reserve_product_usage(
+        owner,
+        METER_DETECTION,
+        product_request_key(idempotency_key, f"analysis:{document.id}:{version.id}:{operation_seed}"),
+    )
     usage_reservation_id = ""
     usage_finalized = False
-    if settings.detector_mode == "pangram":
-        usage_reservation_id = reserve_provider_calls(
-            owner,
-            "Pangram",
-            [ProviderCallSpec("detection", settings.pangram_model, operation_seed)],
-        )["detection"]
+    try:
+        if settings.detector_mode == "pangram":
+            usage_reservation_id = reserve_provider_calls(
+                owner,
+                "Pangram",
+                [ProviderCallSpec("detection", settings.pangram_model, operation_seed)],
+            )["detection"]
+    except Exception:
+        finalize_product_usage(product_usage_reservation_id, consumed=False)
+        raise
     job = create_job(db, owner, document.id, "analysis")
     run = AnalysisRun(id=new_id("analysis"), document_id=document.id, version_id=version.id, status="running", provider_mode=settings.detector_mode)
     db.add(run)
     if settings.job_mode == "celery":
         run.status = "queued"
         job.status = "queued"
-        db.commit()
+        try:
+            queue_product_usage(product_usage_reservation_id, job.id, db)
+            db.commit()
+        except Exception:
+            finalize_product_usage(product_usage_reservation_id, consumed=False)
+            if usage_reservation_id:
+                cancel_unused_reservations([usage_reservation_id])
+            raise
         from services.worker.celery_app import run_analysis_job
 
-        run_analysis_job.delay(job.id, run.id, usage_reservation_id)
+        run_analysis_job.delay(job.id, run.id, usage_reservation_id, product_usage_reservation_id)
         audit(db, owner, "analysis.queued", document.id, analysisId=run.id, providerMode=settings.detector_mode)
         db.commit()
         return {"jobId": job.id, "analysis": document_payload(db, document)["analysis"]}
@@ -339,7 +470,9 @@ async def analyze_document(document_id: str, owner: str = Depends(current_owner)
         job.updated_at = utcnow()
         audit(db, owner, "analysis.complete", document.id, analysisId=run.id, providerMode=settings.detector_mode)
         db.commit()
+        finalize_product_usage(product_usage_reservation_id, consumed=result.get("status") == "success")
     except HTTPException:
+        finalize_product_usage(product_usage_reservation_id, consumed=False)
         if usage_reservation_id and not usage_finalized:
             cancel_unused_reservations([usage_reservation_id])
         run.status = "failed"
@@ -350,6 +483,7 @@ async def analyze_document(document_id: str, owner: str = Depends(current_owner)
         db.commit()
         raise
     except Exception:
+        finalize_product_usage(product_usage_reservation_id, consumed=False)
         if usage_reservation_id and not usage_finalized:
             finalize_provider_call(
                 usage_reservation_id,
@@ -381,9 +515,11 @@ def create_rewrite_session(
 async def first_pass_rewrite(
     document_id: str,
     payload: FirstPassRewriteRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     owner: str = Depends(current_owner),
     db: Session = Depends(get_db),
 ):
+    require_entitlement(db, owner, "agent_rewrite")
     document = get_owned_document(db, owner, document_id)
     if document.current_version_id != payload.version_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="First pass must use the current version")
@@ -423,17 +559,26 @@ async def first_pass_rewrite(
     operation_seed = hashlib.sha256(
         json.dumps({"versionId": version.id, "passages": passages}, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()
+    product_usage_reservation_id = reserve_product_usage(
+        owner,
+        METER_REWRITE,
+        product_request_key(idempotency_key, f"first-pass:{document.id}:{version.id}:{operation_seed}"),
+    )
     reservations: dict[str, str] = {}
     finalized_operations: set[str] = set()
-    if settings.rewrite_mode == "deepseek":
-        reservations = reserve_provider_calls(
-            owner,
-            "DeepSeek",
-            [
-                ProviderCallSpec("rewrite", settings.deepseek_model, f"{operation_seed}:rewrite"),
-                ProviderCallSpec("validation", settings.deepseek_validator_model, f"{operation_seed}:validation"),
-            ],
-        )
+    try:
+        if settings.rewrite_mode == "deepseek":
+            reservations = reserve_provider_calls(
+                owner,
+                "DeepSeek",
+                [
+                    ProviderCallSpec("rewrite", settings.deepseek_model, f"{operation_seed}:rewrite"),
+                    ProviderCallSpec("validation", settings.deepseek_validator_model, f"{operation_seed}:validation"),
+                ],
+            )
+    except Exception:
+        finalize_product_usage(product_usage_reservation_id, consumed=False)
+        raise
 
     def observe_usage(**observation) -> None:
         operation = observation.pop("operation")
@@ -449,6 +594,9 @@ async def first_pass_rewrite(
             idempotency_seed=operation_seed,
             usage_observer=observe_usage if reservations else None,
         )
+    except Exception:
+        finalize_product_usage(product_usage_reservation_id, consumed=False)
+        raise
     finally:
         cancel_unused_reservations(
             [reservation_id for operation, reservation_id in reservations.items() if operation not in finalized_operations]
@@ -476,6 +624,7 @@ async def first_pass_rewrite(
         db.add(patch)
         audit(db, owner, "patch.proposed", document.id, patchId=patch.id, mock=True, provider=proposal["provider"], model=proposal["modelVersion"])
         db.commit()
+        finalize_product_usage(product_usage_reservation_id, consumed=True)
         return {
             "applied": False,
             "patch": {
@@ -527,6 +676,7 @@ async def first_pass_rewrite(
         audit(db, owner, "patch.accepted", document.id, patchId=patch.id)
     audit(db, owner, "document.version", document.id, source="agent-first-pass", wordCount=count)
     db.commit()
+    finalize_product_usage(product_usage_reservation_id, consumed=True)
     return {
         "applied": True,
         "document": document_payload(db, document),
@@ -539,9 +689,11 @@ async def first_pass_rewrite(
 async def rewrite_message(
     session_id: str,
     payload: RewriteMessageRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     owner: str = Depends(current_owner),
     db: Session = Depends(get_db),
 ):
+    require_entitlement(db, owner, "agent_rewrite")
     # Serialize proposals within one rewrite session so concurrent clicks cannot
     # create two independently pending successors. SQLite ignores this clause;
     # PostgreSQL enforces it in production.
@@ -599,17 +751,26 @@ async def rewrite_message(
         f"{payload.instruction}:{payload.selected_text}:{payload.context_scope}".encode("utf-8")
     ).hexdigest()
     operation_seed = f"{rewrite.id}:{version.id}:{payload.paragraph_id}:{previous_patch.id if previous_patch else 'first'}:{instruction_hash}"
+    product_usage_reservation_id = reserve_product_usage(
+        owner,
+        METER_REWRITE,
+        product_request_key(idempotency_key, f"rewrite-message:{operation_seed}"),
+    )
     reservations: dict[str, str] = {}
     finalized_operations: set[str] = set()
-    if settings.rewrite_mode == "deepseek":
-        reservations = reserve_provider_calls(
-            owner,
-            "DeepSeek",
-            [
-                ProviderCallSpec("rewrite", settings.deepseek_model, f"{operation_seed}:rewrite"),
-                ProviderCallSpec("validation", settings.deepseek_validator_model, f"{operation_seed}:validation"),
-            ],
-        )
+    try:
+        if settings.rewrite_mode == "deepseek":
+            reservations = reserve_provider_calls(
+                owner,
+                "DeepSeek",
+                [
+                    ProviderCallSpec("rewrite", settings.deepseek_model, f"{operation_seed}:rewrite"),
+                    ProviderCallSpec("validation", settings.deepseek_validator_model, f"{operation_seed}:validation"),
+                ],
+            )
+    except Exception:
+        finalize_product_usage(product_usage_reservation_id, consumed=False)
+        raise
 
     def observe_usage(**observation) -> None:
         operation = observation.pop("operation")
@@ -631,11 +792,15 @@ async def rewrite_message(
             idempotency_seed=operation_seed,
             usage_observer=observe_usage if reservations else None,
         )
+    except Exception:
+        finalize_product_usage(product_usage_reservation_id, consumed=False)
+        raise
     finally:
         cancel_unused_reservations(
             [reservation_id for operation, reservation_id in reservations.items() if operation not in finalized_operations]
         )
     if proposal["revisedText"] == (current_candidate or proposal["originalText"]):
+        finalize_product_usage(product_usage_reservation_id, consumed=False)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="No safe automatic change was found for this passage")
     revision_number = int(
         db.scalar(select(func.count(PatchRecord.id)).where(PatchRecord.rewrite_session_id == rewrite.id)) or 0
@@ -667,6 +832,7 @@ async def rewrite_message(
         validatorModel=proposal["validatorModelVersion"],
     )
     db.commit()
+    finalize_product_usage(product_usage_reservation_id, consumed=True)
     return {
         "patch": {
             "id": patch.id,
@@ -754,6 +920,7 @@ def reject_patch(
 
 @app.post("/api/v1/documents/{document_id}/exports")
 def export_document(document_id: str, owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+    require_entitlement(db, owner, "docx_import_export")
     document = get_owned_document(db, owner, document_id)
     version = get_version(db, document)
     payload = build_docx(document.title, version.paragraphs, version.version_number)

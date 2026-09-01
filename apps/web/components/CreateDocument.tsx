@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { FilePlus2, LogOut, Upload, WandSparkles } from "lucide-react";
+import { CreditCard, FilePlus2, LogOut, Upload, WandSparkles } from "lucide-react";
 import type { DocumentListItem } from "@/lib/types";
 import { countWords, makeDemoPaper, MAX_DOCUMENT_WORDS, MIN_DOCUMENT_WORDS } from "@/lib/text";
 
@@ -11,10 +11,11 @@ type Props = {
   documents: DocumentListItem[];
   onCreate: (form: FormData) => Promise<void>;
   onOpen: (id: string) => void;
+  onBilling: () => void;
   onLogout: () => void;
 };
 
-export function CreateDocument({ busy, error, documents, onCreate, onOpen, onLogout }: Props) {
+export function CreateDocument({ busy, error, documents, onCreate, onOpen, onBilling, onLogout }: Props) {
   const [title, setTitle] = useState("Ethics of Data Reuse");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -31,7 +32,7 @@ export function CreateDocument({ busy, error, documents, onCreate, onOpen, onLog
 
   return (
     <main className="library-shell">
-      <header className="library-header"><div className="brand-lockup"><span className="brand-mark">P</span><strong>Paperlight</strong></div><button className="icon-text-button" onClick={onLogout}><LogOut size={17} />退出登录</button></header>
+      <header className="library-header"><div className="brand-lockup"><span className="brand-mark">P</span><strong>Paperlight</strong></div><div className="library-actions"><button className="icon-text-button" onClick={onBilling}><CreditCard size={17} />套餐与用量</button><button className="icon-text-button" onClick={onLogout}><LogOut size={17} />退出登录</button></div></header>
       <div className="library-grid">
         <aside className="recent-rail"><span className="library-rail-label">文稿库</span><h2>最近文稿</h2>{documents.length ? documents.map((item) => <button key={item.id} className="recent-row" onClick={() => onOpen(item.id)}><strong>{item.title}</strong><span>{new Date(item.updatedAt).toLocaleDateString()}</span></button>) : <p>尚无文稿。</p>}</aside>
         <section className="create-panel" aria-labelledby="create-title">

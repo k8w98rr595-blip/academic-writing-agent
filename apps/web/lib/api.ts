@@ -2,6 +2,25 @@ import type { PaperDocument } from "./types";
 
 const SESSION_KEY = "paperlight.session.v1";
 
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code = "") {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export function isQuotaError(cause: unknown): boolean {
+  return cause instanceof ApiError
+    && cause.status === 402
+    && ["quota_exceeded", "entitlement_required"].includes(cause.code);
+}
+
+export function withIdempotency(options: RequestInit = {}, key = globalThis.crypto.randomUUID()): RequestInit {
+  const headers = new Headers(options.headers);
+  headers.set("Idempotency-Key", key);
+  return { ...options, headers };
+}
+
 function apiBase(): string {
   if (typeof window === "undefined") return "http://127.0.0.1:8000";
   return (window.PAPERLIGHT_CONFIG?.apiBaseUrl || "http://127.0.0.1:8000").replace(/\/$/, "");
@@ -32,7 +51,14 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   const payload = contentType.includes("application/json") ? await response.json() : await response.text();
   if (!response.ok) {
     if (response.status === 401) clearSession();
-    throw new Error(typeof payload === "object" && payload?.detail ? String(payload.detail) : `Request failed (${response.status})`);
+    const detail = typeof payload === "object" && payload ? payload.detail : null;
+    const message = typeof detail === "object" && detail?.message
+      ? String(detail.message)
+      : typeof detail === "string"
+        ? detail
+        : `Request failed (${response.status})`;
+    const code = typeof detail === "object" && detail?.code ? String(detail.code) : "";
+    throw new ApiError(message, response.status, code);
   }
   return payload as T;
 }

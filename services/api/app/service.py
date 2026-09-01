@@ -8,7 +8,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import AnalysisRun, AuditEvent, Document, DocumentVersion, JobRecord, PatchRecord, RewriteSession, utcnow
+from .models import AnalysisRun, AuditEvent, Document, DocumentQuotaRecord, DocumentVersion, JobRecord, PatchRecord, RewriteSession, utcnow
 from .storage import get_object_storage
 
 
@@ -34,6 +34,9 @@ def get_version(db: Session, document: Document, version_id: str | None = None) 
 
 
 def create_version(db: Session, document: Document, paragraphs: list[dict], word_count: int, source: str) -> DocumentVersion:
+    from .billing import enforce_document_storage_replacement, sync_document_quota
+
+    enforce_document_storage_replacement(db, document, paragraphs)
     current_max = db.scalar(select(func.max(DocumentVersion.version_number)).where(DocumentVersion.document_id == document.id)) or 0
     version = DocumentVersion(
         id=new_id("version"),
@@ -47,6 +50,7 @@ def create_version(db: Session, document: Document, paragraphs: list[dict], word
     db.add(version)
     document.current_version_id = version.id
     document.updated_at = utcnow()
+    sync_document_quota(db, document, paragraphs)
     return version
 
 
@@ -172,6 +176,7 @@ def delete_document_tree(db: Session, document: Document) -> None:
     db.execute(delete(AnalysisRun).where(AnalysisRun.document_id == document_id))
     db.execute(delete(JobRecord).where(JobRecord.document_id == document_id))
     db.execute(delete(DocumentVersion).where(DocumentVersion.document_id == document_id))
+    db.execute(delete(DocumentQuotaRecord).where(DocumentQuotaRecord.document_id == document_id))
     db.delete(document)
     get_object_storage().delete_prefix(f"documents/{document_id}")
 

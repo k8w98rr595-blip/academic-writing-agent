@@ -101,6 +101,35 @@ export type PaperDocument = {
 
 export type DocumentListItem = { id: string; title: string; updatedAt: string; expiresAt: string };
 
+export type BillingMeter = { used: number; limit: number; remaining: number };
+
+export type BillingPlan = {
+  key: "free" | "pro";
+  name: string;
+  description: string;
+  entitlements: Record<string, boolean>;
+  quotas: Record<string, number>;
+};
+
+export type BillingSummary = {
+  mode: "disabled" | "test" | "stripe";
+  plan: BillingPlan & { source: string };
+  subscription: {
+    status: string;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: string | null;
+    graceUntil: string | null;
+    canManage: boolean;
+    checkoutStatus: string;
+  };
+  usage: Record<string, BillingMeter>;
+  plans: BillingPlan[];
+  checkoutAvailable: boolean;
+  funnel: Record<string, number>;
+  periodStart: string;
+  warnings: string[];
+};
+
 declare global {
   interface Window {
     PAPERLIGHT_CONFIG?: { apiBaseUrl: string; basePath: string };

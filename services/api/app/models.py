@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -144,3 +144,111 @@ class ProviderUsageEvent(Base):
     __table_args__ = (
         Index("ix_provider_usage_owner_provider_created", "owner_email", "provider", "created_at"),
     )
+
+
+class BillingAccount(Base):
+    """Provider-neutral billing identity and the currently materialized plan."""
+
+    __tablename__ = "billing_accounts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    plan_key: Mapped[str] = mapped_column(String(32), default="free", index=True)
+    plan_source: Mapped[str] = mapped_column(String(32), default="default")
+    subscription_status: Mapped[str] = mapped_column(String(32), default="none", index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="")
+    provider_customer_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    provider_subscription_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    provider_price_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    grace_until: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_provider_event_created: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    last_provider_event_rank: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
+class BillingCheckoutAttempt(Base):
+    """One durable, replay-safe Checkout slot per billing account."""
+
+    __tablename__ = "billing_checkout_attempts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    billing_account_id: Mapped[str] = mapped_column(
+        ForeignKey("billing_accounts.id", ondelete="CASCADE"), index=True
+    )
+    attempt_token: Mapped[str] = mapped_column(String(64), unique=True)
+    price_id: Mapped[str] = mapped_column(String(128))
+    provider_session_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    checkout_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="creating", index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
+class ProductUsageReservation(Base):
+    """Idempotent, content-free reservations for customer-visible quota meters."""
+
+    __tablename__ = "product_usage_reservations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_email: Mapped[str] = mapped_column(String(320), index=True)
+    meter: Mapped[str] = mapped_column(String(64), index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    idempotency_hash: Mapped[str] = mapped_column(String(64))
+    period_start: Mapped[datetime] = mapped_column(DateTime(), index=True)
+    status: Mapped[str] = mapped_column(String(24), default="reserved", index=True)
+    job_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("owner_email", "meter", "idempotency_hash", name="uq_product_usage_idempotency"),
+        Index("ix_product_usage_owner_meter_period", "owner_email", "meter", "period_start"),
+    )
+
+
+class DocumentQuotaRecord(Base):
+    """Billable current-document bytes; immutable system history is excluded."""
+
+    __tablename__ = "document_quota_records"
+
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
+    owner_email: Mapped[str] = mapped_column(String(320), index=True)
+    content_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    original_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
+class BillingWebhookEvent(Base):
+    """Replay-safe Stripe event ledger without full payment payloads."""
+
+    __tablename__ = "billing_webhook_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider_event_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(128), index=True)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="processing", index=True)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    provider_created_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(), nullable=True)
+
+
+class BillingProductEvent(Base):
+    """Low-cardinality upgrade-funnel telemetry, never document content."""
+
+    __tablename__ = "billing_product_events"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    owner_email: Mapped[str] = mapped_column(String(320), index=True)
+    event_name: Mapped[str] = mapped_column(String(64), index=True)
+    trigger: Mapped[str] = mapped_column(String(80), default="")
+    plan_key: Mapped[str] = mapped_column(String(32), default="free")
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow, index=True)
+
+    __table_args__ = (Index("ix_billing_product_owner_event_created", "owner_email", "event_name", "created_at"),)

@@ -107,3 +107,34 @@ class ProviderUsageSummaryResponse(BaseModel):
     warnings: list[str]
     generatedAt: str
     disclaimer: str
+
+
+class BillingEventRequest(BaseModel):
+    event_name: Literal["pro_page_viewed", "upgrade_clicked"]
+    trigger: str = Field(default="pricing", min_length=1, max_length=40, pattern=r"^[a-z0-9_-]+$")
+
+
+class BillingSessionRequest(BaseModel):
+    trigger: str = Field(default="pricing", min_length=1, max_length=40, pattern=r"^[a-z0-9_-]+$")
+
+
+class BillingSessionResponse(BaseModel):
+    url: str
+
+
+class BillingTestPlanRequest(BaseModel):
+    plan: Literal["free", "pro"]
+
+
+class BillingSummaryResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    mode: Literal["disabled", "test", "stripe"]
+    plan: dict
+    subscription: dict
+    usage: dict
+    plans: list[dict]
+    checkoutAvailable: bool
+    funnel: dict[str, int]
+    periodStart: str
+    warnings: list[str]

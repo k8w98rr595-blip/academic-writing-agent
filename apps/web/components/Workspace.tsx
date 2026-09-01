@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlignLeft, Bold, ChevronDown, Download, FileClock, FileText, History, Italic, ListTree, LogOut, Plus, Redo2, Save, ShieldCheck, Sparkles, Trash2, Undo2 } from "lucide-react";
-import { api, downloadExport } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlignLeft, Bold, ChevronDown, CreditCard, Download, FileClock, FileText, History, Italic, ListTree, LogOut, Plus, Redo2, Save, ShieldCheck, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { api, downloadExport, isQuotaError, withIdempotency } from "@/lib/api";
 import { buildRewriteMessage, selectInitialRewriteParagraphs, type AgentContextScope } from "@/lib/agent";
 import type { DocumentListItem, EvidenceSpan, PaperDocument, Paragraph, Patch, VersionSummary } from "@/lib/types";
 import { Inspector, type InspectorTab } from "./Inspector";
@@ -16,6 +16,7 @@ type Props = {
   onOpen: (id: string) => void;
   onNew: () => void;
   onDeleted: () => void;
+  onBilling: () => void;
   onLogout: () => void;
 };
 
@@ -24,7 +25,7 @@ type Confirmation =
   | { kind: "restore"; version: VersionSummary };
 
 export function Workspace(props: Props) {
-  const { document, documents, onDocumentChange, onOpen, onNew, onDeleted, onLogout } = props;
+  const { document, documents, onDocumentChange, onOpen, onNew, onDeleted, onBilling, onLogout } = props;
   const [paragraphs, setParagraphs] = useState<Paragraph[]>(document.currentVersion.paragraphs);
   const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<InspectorTab>(document.analysis ? "detection" : "agent");
@@ -37,6 +38,19 @@ export function Workspace(props: Props) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const requestKeys = useRef(new Map<string, string>());
+
+  function requestKey(operation: string): string {
+    const existing = requestKeys.current.get(operation);
+    if (existing) return existing;
+    const created = globalThis.crypto.randomUUID();
+    requestKeys.current.set(operation, created);
+    return created;
+  }
+
+  function completeRequest(operation: string): void {
+    requestKeys.current.delete(operation);
+  }
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const stale = dirty || Boolean(document.analysis?.isStale);
   const detectionResult = document.analysis?.result;
@@ -125,13 +139,16 @@ export function Workspace(props: Props) {
     setMessage("");
     try {
       const current = await saveDraft();
-      await api(`/api/v1/documents/${current.id}/analyses`, { method: "POST" });
+      const operation = `analysis:${current.id}:${current.currentVersion.id}`;
+      await api(`/api/v1/documents/${current.id}/analyses`, withIdempotency({ method: "POST" }, requestKey(operation)));
+      completeRequest(operation);
       const refreshed = await api<{ document: PaperDocument }>(`/api/v1/documents/${current.id}`);
       onDocumentChange(refreshed.document);
       setParagraphs(refreshed.document.currentVersion.paragraphs);
       setTab("detection");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Analysis failed");
+      if (isQuotaError(cause)) onBilling();
     } finally {
       setBusy(false);
     }
@@ -153,13 +170,16 @@ export function Workspace(props: Props) {
         text: selection.text,
       };
       const body = buildRewriteMessage({ instruction, selection: safeSelection, pendingPatch, contextScope, fullDocumentConfirmed });
-      const response = await api<{ patch: Patch }>(`/api/v1/rewrite-sessions/${sessionId}/messages`, { method: "POST", body: JSON.stringify(body) });
+      const operation = `rewrite:${sessionId}:${safeSelection.paragraphId}:${pendingPatch?.id || "first"}:${instruction}:${contextScope}`;
+      const response = await api<{ patch: Patch }>(`/api/v1/rewrite-sessions/${sessionId}/messages`, withIdempotency({ method: "POST", body: JSON.stringify(body) }, requestKey(operation)));
+      completeRequest(operation);
       setPendingPatch(response.patch);
       setRewriteSessionId(response.patch.rewriteSessionId || sessionId);
       setMessage(`Agent 建议版本 ${response.patch.revisionNumber || 1} 已生成，等待你审阅。`);
       setTab("agent");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Unable to prepare patch");
+      if (isQuotaError(cause)) onBilling();
     } finally {
       setBusy(false);
     }
@@ -172,16 +192,18 @@ export function Workspace(props: Props) {
     setTab("agent");
     try {
       const current = await saveDraft();
+      const operation = `first-pass:${current.id}:${current.currentVersion.id}`;
       const response = await api<{
         applied: boolean;
         document?: PaperDocument;
         patch?: Patch;
         targetParagraphCount: number;
         revisedParagraphCount?: number;
-      }>(`/api/v1/documents/${current.id}/first-pass-rewrite`, {
+      }>(`/api/v1/documents/${current.id}/first-pass-rewrite`, withIdempotency({
         method: "POST",
         body: JSON.stringify({ version_id: current.currentVersion.id }),
-      });
+      }, requestKey(operation)));
+      completeRequest(operation);
       if (!response.applied && response.patch) {
         setPendingPatch(response.patch);
         setRewriteSessionId(response.patch.rewriteSessionId || "");
@@ -198,6 +220,7 @@ export function Workspace(props: Props) {
       setMessage(`已检查 ${response.targetParagraphCount} 个风险段落，并将 ${response.revisedParagraphCount || 0} 个安全修改保存为新版本。检测结果已过期；现在进入逐条审阅模式。`);
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "首次修改未完成");
+      if (isQuotaError(cause)) onBilling();
     } finally {
       setBusy(false);
     }
@@ -270,6 +293,7 @@ export function Workspace(props: Props) {
           <button className={!inspectorCollapsed && tab === "agent" ? "active" : ""} onClick={() => openInspector("agent")} title="写作助手"><Sparkles size={22} /><span>写作助手</span></button>
           <button className={!inspectorCollapsed && tab === "detection" ? "active" : ""} onClick={() => openInspector("detection")} title="AI 写作风险检测"><ShieldCheck size={22} /><span>AI 风险</span></button>
           <button className={!inspectorCollapsed && tab === "versions" ? "active" : ""} onClick={() => openInspector("versions")} title="版本"><History size={22} /><span>版本</span></button>
+          <button onClick={onBilling} title="套餐与用量"><CreditCard size={22} /><span>套餐</span></button>
         </nav>
         <button className="studio-logout" title="退出登录" onClick={onLogout}><LogOut size={20} /><span>退出</span></button>
       </aside>

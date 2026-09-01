@@ -7,7 +7,9 @@ flowchart LR
   U["Owner browser"] -->|"Static assets"| P["GitHub Pages / Next.js export"]
   P -->|"Bearer session + CORS"| A["FastAPI owner API"]
   A --> D[("PostgreSQL / local SQLite")]
-  A --> U[("Content-free Provider usage ledger")]
+  A --> PU[("Content-free Provider usage ledger")]
+  A --> B[("Plan / Entitlement / Quota / Usage")]
+  B --> S["Stripe Checkout + Portal + signed webhooks"]
   A --> O["Object storage adapter"]
   O --> L["Local volume"]
   O --> M["MinIO or S3-compatible storage"]
@@ -34,6 +36,7 @@ flowchart LR
 - 删除：文档树、任务和对象前缀同步清除；排队任务发现记录已删除时自动退出。
 - 日志：不记录论文全文、完整改写稿、Bearer Token 或 Provider Key。
 - 费用保护：真实 DeepSeek/Pangram 调用先预留额度；调用记录只保存哈希幂等键、Provider/模型、状态、耗时和供应商返回的计量单位。Pangram 额外限制为同内容 24 小时去重、每小时提醒 1 次/硬限制 2 次、每日 4 次和并发 1 次；十五分钟故障熔断不会阻止登录、阅读、导出或删除。
+- 付费权限：Free/Pro 套餐只在集中 catalog 中定义；业务入口统一读取 Entitlement，再原子预留 Quota/Usage。Stripe 只负责交易生命周期，签名 Webhook 经过价格白名单、乱序和重放校验后才物化 Paperlight 的最终 Plan。某一额度用完不会阻断其他核心能力。
 
 ## 当前产品边界
 

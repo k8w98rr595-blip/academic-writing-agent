@@ -5,6 +5,7 @@ import asyncio
 from celery import Celery
 
 from services.api.app.config import get_settings
+from services.api.app.billing import claim_product_usage, finalize_product_usage
 from services.api.app.database import session_scope
 from services.api.app.models import AnalysisRun, JobRecord, utcnow
 from services.api.app.providers import detection_content_fingerprint, run_detection
@@ -31,19 +32,28 @@ celery.conf.beat_schedule = {
 
 
 @celery.task(name="paperlight.analysis")
-def run_analysis_job(job_id: str, analysis_id: str, usage_reservation_id: str = "") -> str:
+def run_analysis_job(
+    job_id: str,
+    analysis_id: str,
+    usage_reservation_id: str = "",
+    product_usage_reservation_id: str = "",
+) -> str:
     with session_scope() as db:
         job = db.get(JobRecord, job_id)
         analysis = db.get(AnalysisRun, analysis_id)
         if not job or not analysis or job.status not in {"queued", "running"}:
             if usage_reservation_id:
                 cancel_unused_reservations([usage_reservation_id])
+            finalize_product_usage(product_usage_reservation_id, consumed=False, db=db)
             return "ignored"
+        if not claim_product_usage(product_usage_reservation_id, job_id, db):
+            return "duplicate_blocked"
         document = db.get(Document, analysis.document_id)
         if not document:
             job.status = "cancelled"
             if usage_reservation_id:
                 cancel_unused_reservations([usage_reservation_id])
+            finalize_product_usage(product_usage_reservation_id, consumed=False, db=db)
             return "cancelled"
         version = get_version(db, document, analysis.version_id)
         if usage_reservation_id and not claim_provider_call(usage_reservation_id):
@@ -57,6 +67,7 @@ def run_analysis_job(job_id: str, analysis_id: str, usage_reservation_id: str = 
             job.status = "failed"
             job.error_code = "PROVIDER_OUTCOME_UNKNOWN"
             job.updated_at = utcnow()
+            finalize_product_usage(product_usage_reservation_id, consumed=False, db=db)
             return "duplicate_blocked"
         job.status = "running"
         analysis.status = "running"
@@ -80,6 +91,7 @@ def run_analysis_job(job_id: str, analysis_id: str, usage_reservation_id: str = 
             job.status = "failed"
             job.error_code = "PROVIDER_FAILED"
             job.updated_at = utcnow()
+            finalize_product_usage(product_usage_reservation_id, consumed=False, db=db)
             return "failed"
         if usage_reservation_id:
             error_code = (result.get("error") or {}).get("code") if isinstance(result.get("error"), dict) else None
@@ -101,6 +113,7 @@ def run_analysis_job(job_id: str, analysis_id: str, usage_reservation_id: str = 
         job.status = "completed"
         job.result_ref = analysis.id
         job.updated_at = utcnow()
+        finalize_product_usage(product_usage_reservation_id, consumed=result.get("status") == "success", db=db)
         return analysis.id
 
 

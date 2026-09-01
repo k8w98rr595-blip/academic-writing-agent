@@ -73,6 +73,21 @@ class Settings:
     provider_failure_breaker_threshold: int
     provider_breaker_seconds: int
     provider_usage_retention_days: int
+    billing_mode: str
+    billing_disabled_plan: str
+    billing_app_url: str
+    billing_past_due_grace_days: int
+    billing_free_documents: int
+    billing_free_storage_bytes: int
+    billing_free_detection_runs: int
+    billing_free_rewrite_runs: int
+    billing_pro_documents: int
+    billing_pro_storage_bytes: int
+    billing_pro_detection_runs: int
+    billing_pro_rewrite_runs: int
+    stripe_secret_key: str
+    stripe_webhook_secret: str
+    stripe_pro_monthly_price_id: str
 
     @property
     def is_production(self) -> bool:
@@ -131,6 +146,21 @@ def get_settings() -> Settings:
         provider_failure_breaker_threshold=int(os.getenv("PROVIDER_FAILURE_BREAKER_THRESHOLD", "5")),
         provider_breaker_seconds=int(os.getenv("PROVIDER_BREAKER_SECONDS", "900")),
         provider_usage_retention_days=int(os.getenv("PROVIDER_USAGE_RETENTION_DAYS", "30")),
+        billing_mode=os.getenv("BILLING_MODE", "disabled").strip().lower(),
+        billing_disabled_plan=os.getenv("BILLING_DISABLED_PLAN", "pro").strip().lower(),
+        billing_app_url=os.getenv("BILLING_APP_URL", "http://127.0.0.1:3000").strip().rstrip("/"),
+        billing_past_due_grace_days=int(os.getenv("BILLING_PAST_DUE_GRACE_DAYS", "3")),
+        billing_free_documents=int(os.getenv("BILLING_FREE_DOCUMENTS", "3")),
+        billing_free_storage_bytes=int(os.getenv("BILLING_FREE_STORAGE_BYTES", str(10 * 1024 * 1024))),
+        billing_free_detection_runs=int(os.getenv("BILLING_FREE_DETECTION_RUNS", "2")),
+        billing_free_rewrite_runs=int(os.getenv("BILLING_FREE_REWRITE_RUNS", "5")),
+        billing_pro_documents=int(os.getenv("BILLING_PRO_DOCUMENTS", "25")),
+        billing_pro_storage_bytes=int(os.getenv("BILLING_PRO_STORAGE_BYTES", str(250 * 1024 * 1024))),
+        billing_pro_detection_runs=int(os.getenv("BILLING_PRO_DETECTION_RUNS", "20")),
+        billing_pro_rewrite_runs=int(os.getenv("BILLING_PRO_REWRITE_RUNS", "60")),
+        stripe_secret_key=os.getenv("STRIPE_SECRET_KEY", ""),
+        stripe_webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET", ""),
+        stripe_pro_monthly_price_id=os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID", "").strip(),
     )
     settings.object_storage_dir.mkdir(parents=True, exist_ok=True)
     if settings.is_production and "*" in settings.allowed_origins:
@@ -180,6 +210,56 @@ def get_settings() -> Settings:
         raise RuntimeError("Provider breaker duration is invalid")
     if not 1 <= settings.provider_usage_retention_days <= 365:
         raise RuntimeError("Provider usage retention is invalid")
+    if settings.billing_mode not in {"disabled", "test", "stripe"}:
+        raise RuntimeError("BILLING_MODE must be disabled, test, or stripe")
+    if settings.billing_disabled_plan not in {"free", "pro"}:
+        raise RuntimeError("BILLING_DISABLED_PLAN must be free or pro")
+    if settings.is_production and settings.billing_mode == "test":
+        raise RuntimeError("Test billing cannot run in production")
+    if not 0 <= settings.billing_past_due_grace_days <= 30:
+        raise RuntimeError("Billing grace period is invalid")
+    quota_values = (
+        settings.billing_free_documents,
+        settings.billing_free_storage_bytes,
+        settings.billing_free_detection_runs,
+        settings.billing_free_rewrite_runs,
+        settings.billing_pro_documents,
+        settings.billing_pro_storage_bytes,
+        settings.billing_pro_detection_runs,
+        settings.billing_pro_rewrite_runs,
+    )
+    if any(value < 1 for value in quota_values):
+        raise RuntimeError("Billing quotas must be positive")
+    if (
+        settings.billing_pro_documents < settings.billing_free_documents
+        or settings.billing_pro_storage_bytes < settings.billing_free_storage_bytes
+        or settings.billing_pro_detection_runs < settings.billing_free_detection_runs
+        or settings.billing_pro_rewrite_runs < settings.billing_free_rewrite_runs
+    ):
+        raise RuntimeError("Pro quotas must not be lower than Free quotas")
+    billing_url = urlsplit(settings.billing_app_url)
+    if (
+        billing_url.scheme not in {"http", "https"}
+        or not billing_url.hostname
+        or billing_url.username
+        or billing_url.password
+        or billing_url.query
+        or billing_url.fragment
+    ):
+        raise RuntimeError("BILLING_APP_URL is invalid")
+    if settings.is_production and settings.billing_mode == "stripe" and billing_url.scheme != "https":
+        raise RuntimeError("Production BILLING_APP_URL must use HTTPS")
+    if settings.billing_mode == "stripe":
+        if not settings.stripe_secret_key or not settings.stripe_webhook_secret or not settings.stripe_pro_monthly_price_id:
+            raise RuntimeError("Stripe billing requires its secret key, webhook secret, and Pro Price ID")
+        if not settings.stripe_secret_key.startswith(("sk_", "rk_")):
+            raise RuntimeError("STRIPE_SECRET_KEY must be a server-side secret or restricted key")
+        if not settings.stripe_webhook_secret.startswith("whsec_"):
+            raise RuntimeError("STRIPE_WEBHOOK_SECRET is invalid")
+        if not settings.stripe_pro_monthly_price_id.startswith("price_"):
+            raise RuntimeError("STRIPE_PRO_MONTHLY_PRICE_ID is invalid")
+        if settings.is_production and not settings.stripe_secret_key.startswith(("sk_live_", "rk_live_")):
+            raise RuntimeError("Production Stripe billing requires a live-mode server key")
     return settings
 
 
