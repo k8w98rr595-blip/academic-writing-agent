@@ -1,6 +1,34 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, isQuotaError, withIdempotency } from "./api";
+import { api, ApiError, isQuotaError, withIdempotency } from "./api";
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("local staging isolation", () => {
+  it("refuses a production API before issuing any request", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("sessionStorage", { getItem: () => null });
+    vi.stubGlobal("window", { PAPERLIGHT_CONFIG: {
+      environment: "local-staging", apiBaseUrl: "https://production.invalid", basePath: "/academic-writing-agent",
+    } });
+    await expect(api("/api/health")).rejects.toThrow("非隔离 API");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("uses only the dedicated loopback API for staging", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("sessionStorage", { getItem: () => null });
+    vi.stubGlobal("window", { PAPERLIGHT_CONFIG: {
+      environment: "local-staging", apiBaseUrl: "http://127.0.0.1:8100", basePath: "/academic-writing-agent",
+    } });
+    await expect(api("/api/health")).resolves.toEqual({ ok: true });
+    expect(fetch.mock.calls[0][0]).toBe("http://127.0.0.1:8100/api/health");
+  });
+});
 
 describe("paid product request boundaries", () => {
   it("adds a fresh opaque idempotency key without dropping existing headers", () => {

@@ -105,6 +105,12 @@ app.add_middleware(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    if settings.app_env == "local-staging":
+        # Reject DNS rebinding and cross-site state changes even on loopback.
+        if request.headers.get("host") != "127.0.0.1:8100":
+            return Response(status_code=403)
+        if request.headers.get("origin") not in {None, "http://127.0.0.1:3100"}:
+            return Response(status_code=403)
     request_id = request.headers.get("x-request-id", "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", request_id):
         request_id = secrets.token_urlsafe(12)
@@ -136,6 +142,7 @@ def health() -> dict:
     return {
         "ok": True,
         "service": "paperlight-api",
+        "environment": settings.app_env,
         "providerMode": {"detector": settings.detector_mode, "rewrite": settings.rewrite_mode},
         "detectorProvider": {
             "provider": "Pangram" if settings.detector_mode == "pangram" else "Mock Pangram",

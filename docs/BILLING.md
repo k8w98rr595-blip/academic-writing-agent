@@ -11,6 +11,8 @@ Core document code never checks `isPro`. It calls the centralized catalog and qu
 
 ## Modes
 
+Use the [isolated local staging launcher](LOCAL_STAGING.md) to exercise the existing fake billing mode without loading production credentials. `BILLING_MODE=test` is not Stripe Sandbox validation. The dedicated `APP_ENV=local-staging` deliberately rejects Stripe and all external Provider credentials; a future Stripe Sandbox deployment requires a separately reviewed environment.
+
 | `BILLING_MODE` | Behaviour | Production allowed |
 |---|---|---|
 | `disabled` | Keeps the existing owner-only deployment working. `BILLING_DISABLED_PLAN` selects the owner plan and quota enforcement is off. Usage is still visible. | Yes; current default |

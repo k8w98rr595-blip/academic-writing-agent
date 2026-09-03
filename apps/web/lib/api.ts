@@ -23,6 +23,10 @@ export function withIdempotency(options: RequestInit = {}, key = globalThis.cryp
 
 function apiBase(): string {
   if (typeof window === "undefined") return "http://127.0.0.1:8000";
+  if (window.PAPERLIGHT_CONFIG?.environment === "local-staging"
+    && window.PAPERLIGHT_CONFIG.apiBaseUrl !== "http://127.0.0.1:8100") {
+    throw new Error("本地测试环境拒绝连接非隔离 API");
+  }
   return (window.PAPERLIGHT_CONFIG?.apiBaseUrl || "http://127.0.0.1:8000").replace(/\/$/, "");
 }
 

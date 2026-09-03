@@ -10,6 +10,8 @@ The current production stage intentionally uses password-only owner authenticati
 
 ## Local development
 
+For an isolated, credential-free product rehearsal, use [`docs/LOCAL_STAGING.md`](docs/LOCAL_STAGING.md): `scripts/start-staging.ps1 build`, then `smoke` or `serve`. It uses separate loopback ports, data and credentials, forces Mock providers and simulated billing, and never reads `.env.local`. This is local functional staging, not a production-equivalent cloud environment or Stripe payment acceptance.
+
 Prerequisites: Node.js 22+, pnpm, and Python 3.12+.
 
 ```powershell

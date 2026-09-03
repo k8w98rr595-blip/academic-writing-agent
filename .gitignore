@@ -49,3 +49,4 @@ findings.md
 progress.md
 design/qa/
 tests/.runtime/
+.staging/

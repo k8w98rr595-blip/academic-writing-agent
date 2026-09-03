@@ -132,6 +132,6 @@ export type BillingSummary = {
 
 declare global {
   interface Window {
-    PAPERLIGHT_CONFIG?: { apiBaseUrl: string; basePath: string };
+    PAPERLIGHT_CONFIG?: { apiBaseUrl: string; basePath: string; environment?: "local-staging" };
   }
 }

@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 
-if os.getenv("APP_ENV", "development").strip().lower() != "test":
+if os.getenv("APP_ENV", "development").strip().lower() not in {"test", "local-staging"}:
     load_dotenv(".env.local")
 
 
@@ -97,7 +97,7 @@ class Settings:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     settings = Settings(
-        app_env=os.getenv("APP_ENV", "development"),
+        app_env=os.getenv("APP_ENV", "development").strip().lower(),
         host=os.getenv("HOST", "127.0.0.1"),
         port=int(os.getenv("PORT", "8000")),
         database_url=os.getenv("DATABASE_URL", "sqlite:///./data/paperlight.db"),
@@ -162,7 +162,10 @@ def get_settings() -> Settings:
         stripe_webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET", ""),
         stripe_pro_monthly_price_id=os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID", "").strip(),
     )
-    settings.object_storage_dir.mkdir(parents=True, exist_ok=True)
+    if settings.app_env == "local-staging":
+        from .staging_guard import validate_local_staging
+
+        validate_local_staging(settings)
     if settings.is_production and "*" in settings.allowed_origins:
         raise RuntimeError("Production CORS must not allow every origin")
     if settings.is_production and settings.rewrite_mode == "deepseek":
@@ -260,6 +263,7 @@ def get_settings() -> Settings:
             raise RuntimeError("STRIPE_PRO_MONTHLY_PRICE_ID is invalid")
         if settings.is_production and not settings.stripe_secret_key.startswith(("sk_live_", "rk_live_")):
             raise RuntimeError("Production Stripe billing requires a live-mode server key")
+    settings.object_storage_dir.mkdir(parents=True, exist_ok=True)
     return settings
 
 

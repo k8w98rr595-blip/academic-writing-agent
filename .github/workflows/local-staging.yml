@@ -1,0 +1,30 @@
+name: Isolated local staging
+
+on:
+  push:
+    branches: [main, codex/local-staging]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: corepack enable && corepack prepare pnpm@11.7.0 --activate
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: pnpm install --frozen-lockfile
+      - run: python -m pip install -r services/api/requirements-dev.txt
+      - run: python scripts/local_staging.py build
+      - run: python scripts/local_staging.py smoke
+      # No Railway/Pages deploy, production env, credential, or retained test database.

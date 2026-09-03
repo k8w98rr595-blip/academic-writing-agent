@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { EnvironmentBanner } from "@/components/EnvironmentBanner";
 import "@fontsource-variable/manrope";
 import "@fontsource/source-serif-4/400.css";
 import "@fontsource/source-serif-4/600.css";
@@ -12,6 +13,9 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
+  const connectPolicy = process.env.PAPERLIGHT_LOCAL_STAGING === "1"
+    ? "'self' http://127.0.0.1:8100"
+    : "'self' https: http://127.0.0.1:8000 http://localhost:8000";
   const scriptPolicy = process.env.NODE_ENV === "production"
     ? "script-src 'self' 'unsafe-inline'"
     : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
@@ -20,11 +24,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         <meta
           httpEquiv="Content-Security-Policy"
-          content={`default-src 'self'; ${scriptPolicy}; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http://127.0.0.1:8000 http://localhost:8000; img-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`}
+          content={`default-src 'self'; ${scriptPolicy}; style-src 'self' 'unsafe-inline'; connect-src ${connectPolicy}; img-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`}
         />
         <script src={`${basePath}/config.js`} defer />
       </head>
-      <body>{children}</body>
+      <body><EnvironmentBanner enabled={process.env.PAPERLIGHT_LOCAL_STAGING === "1"} />{children}</body>
     </html>
   );
 }
