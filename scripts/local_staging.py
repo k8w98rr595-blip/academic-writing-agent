@@ -77,6 +77,8 @@ def build_site() -> Path:
     if not node or not (modules / "next/dist/bin/next").is_file():
         raise StagingError("Install Node.js and run pnpm install --frozen-lockfile first")
     build = STAGING_ROOT / "builds" / uuid.uuid4().hex / "web"
+    if not inside_staging(build):
+        raise StagingError("Refusing build through an external staging path alias")
     build.mkdir(parents=True)
     source = ROOT / "apps/web"
     # Explicit source allowlist: no .env files, local data, credentials or old output.
@@ -112,6 +114,8 @@ def build_site() -> Path:
 
 def site_directory() -> Path:
     manifest = STAGING_ROOT / "site.json"
+    if not inside_staging(manifest):
+        raise StagingError("Refusing a non-isolated site manifest")
     if not manifest.is_file():
         raise StagingError("Run the build command first")
     site = (STAGING_ROOT / json.loads(manifest.read_text(encoding="utf-8"))["path"]).resolve()
@@ -165,6 +169,8 @@ class StagingFiles(SimpleHTTPRequestHandler):
 
 @contextmanager
 def running_stage(run_dir: Path, password: str):
+    if not inside_staging(run_dir):
+        raise StagingError("Refusing a non-isolated runtime directory")
     site = site_directory()
     ensure_free_ports()
     run_dir.mkdir(parents=True, exist_ok=True)

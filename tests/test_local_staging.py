@@ -101,6 +101,12 @@ def test_launcher_paths_cannot_escape_staging():
         api_environment(STAGING_ROOT.parent / "data", "synthetic")
 
 
+def test_staging_root_cannot_alias_another_project_directory(monkeypatch):
+    from services.api.app import staging_guard
+    monkeypatch.setattr(staging_guard, "STAGING_ROOT", STAGING_ROOT.parent / "data")
+    assert staging_guard.inside_staging(STAGING_ROOT.parent / "data/objects") is False
+
+
 def test_static_server_limits_host_paths_and_connections(tmp_path):
     (tmp_path / "index.html").write_text("<h1>isolated</h1>", encoding="utf-8")
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(StagingFiles, directory=str(tmp_path)))

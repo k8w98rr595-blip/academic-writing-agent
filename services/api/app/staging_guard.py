@@ -18,7 +18,7 @@ API_ORIGIN = "http://127.0.0.1:8100"
 def inside_staging(path: Path) -> bool:
     resolved = path.resolve()
     root = STAGING_ROOT.resolve()
-    return (root.parent == Path(__file__).resolve().parents[3]
+    return (root == Path(__file__).resolve().parents[3] / ".staging"
             and path.is_absolute() and resolved != root and resolved.is_relative_to(root))
 
 
