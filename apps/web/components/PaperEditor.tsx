@@ -1,103 +1,77 @@
 "use client";
 
-import { ClipboardEvent, FocusEvent, KeyboardEvent, MouseEvent, useState } from "react";
+import { useLayoutEffect, useRef } from "react";
 import type { EvidenceSpan, Paragraph } from "@/lib/types";
 import { editableChunks } from "@/lib/text";
 
 type Selection = { paragraphId: string; text: string };
-
 type Props = {
   paragraphs: Paragraph[];
   spans: EvidenceSpan[];
   stale: boolean;
-  onDirty: () => void;
-  onParagraphBlur: (paragraphId: string, value: string) => void;
+  disabled: boolean;
+  onParagraphChange: (paragraphId: string, value: string) => void;
   onSelection: (selection: Selection) => void;
   onRiskSpan: (selection: Selection) => void;
 };
 
-export function PaperEditor({ paragraphs, spans, stale, onDirty, onParagraphBlur, onSelection, onRiskSpan }: Props) {
-  const [editingParagraphId, setEditingParagraphId] = useState<string | null>(null);
+function EditableParagraph({ paragraph, index, ...props }: Omit<Props, "paragraphs"> & { paragraph: Paragraph; index: number }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  // The browser owns the editable subtree. React must not reconcile evidence
+  // children with nodes that typing, paste or native undo already removed.
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || window.document.activeElement === element) return;
+    const nodes = editableChunks(paragraph.text, props.spans.filter(span => span.paragraphId === paragraph.id), false).map(chunk => {
+      if (!chunk.classification || props.stale) return window.document.createTextNode(chunk.text);
+      const mark = window.document.createElement("mark");
+      mark.textContent = chunk.text;
+      mark.className = `evidence ${chunk.classification}`;
+      mark.tabIndex = 0;
+      mark.setAttribute("role", "button");
+      mark.title = "发送到写作助手审阅";
+      return mark;
+    });
+    element.replaceChildren(...nodes);
+  }, [paragraph.text, paragraph.id, props.spans, props.stale]);
 
-  function captureSelection(event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) {
-    const selection = window.getSelection();
-    const target = event.currentTarget;
-    onSelection({ paragraphId: target.dataset.paragraphId || "", text: selection?.toString().trim() || "" });
+  function input() {
+    const element = ref.current!;
+    element.querySelectorAll("mark").forEach(mark => mark.replaceWith(...Array.from(mark.childNodes)));
+    props.onParagraphChange(paragraph.id, element.innerText);
   }
-
-  function pastePlain(event: ClipboardEvent<HTMLElement>) {
-    event.preventDefault();
-    document.execCommand("insertText", false, event.clipboardData.getData("text/plain"));
+  function captureSelection() {
+    props.onSelection({ paragraphId: paragraph.id, text: window.getSelection()?.toString().trim() || "" });
   }
+  const isHeading = paragraph.text.length < 80 && !/[.!?]$/.test(paragraph.text);
+  return <p ref={ref} data-paragraph-id={paragraph.id} className={isHeading ? "paper-heading" : "paper-paragraph"}
+    contentEditable={!props.disabled} suppressContentEditableWarning spellCheck role="textbox" aria-multiline="true"
+    aria-readonly={props.disabled} aria-label={isHeading ? `Heading ${index + 1}` : `Paragraph ${index + 1}`}
+    onInput={input} onMouseUp={captureSelection} onKeyUp={event => { if (!(event.target as HTMLElement).closest("mark.evidence")) captureSelection(); }}
+    onPaste={event => {
+      event.preventDefault();
+      window.document.execCommand("insertText", false, event.clipboardData.getData("text/plain"));
+      input();
+    }}
+    onPointerDown={event => {
+      const mark = (event.target as HTMLElement).closest("mark.evidence");
+      if (mark && !props.disabled) {
+        event.preventDefault();
+        props.onRiskSpan({ paragraphId: paragraph.id, text: mark.textContent || "" });
+      }
+    }}
+    onKeyDown={event => {
+      const mark = (event.target as HTMLElement).closest("mark.evidence");
+      if (mark && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        props.onRiskSpan({ paragraphId: paragraph.id, text: mark.textContent || "" });
+      }
+      if ((event.ctrlKey || event.metaKey) && ["b", "i", "u"].includes(event.key.toLowerCase())) event.preventDefault();
+    }} />;
+}
 
-  return (
-    <article className={`paper-page ${stale ? "analysis-stale" : ""}`} aria-label="Editable paper">
-      {paragraphs.map((paragraph, index) => {
-        const paragraphSpans = spans.filter((span) => span.paragraphId === paragraph.id);
-        const isHeading = paragraph.text.length < 80 && !/[.!?]$/.test(paragraph.text);
-        // Evidence marks are React-managed children. Browsers mutate a contentEditable
-        // subtree directly while the author types, so keep the active paragraph as one
-        // plain text node until blur; otherwise React can reconcile against nodes that
-        // the browser has already removed and crash the workspace.
-        const chunks = editableChunks(paragraph.text, paragraphSpans, editingParagraphId === paragraph.id);
-        return (
-          <p
-            key={paragraph.id}
-            className={isHeading ? "paper-heading" : "paper-paragraph"}
-            data-paragraph-id={paragraph.id}
-            contentEditable
-            suppressContentEditableWarning
-            spellCheck
-            role="textbox"
-            aria-multiline="true"
-            aria-label={isHeading ? `Heading ${index + 1}` : `Paragraph ${index + 1}`}
-            onFocus={(event: FocusEvent<HTMLElement>) => {
-              if (event.target === event.currentTarget) setEditingParagraphId(paragraph.id);
-            }}
-            onInput={onDirty}
-            onBlur={(event: FocusEvent<HTMLElement>) => {
-              if (event.target !== event.currentTarget) return;
-              const value = event.currentTarget.innerText.trim();
-              setEditingParagraphId(null);
-              onParagraphBlur(paragraph.id, value);
-            }}
-            onPointerDownCapture={(event) => {
-              const evidence = (event.target as HTMLElement).closest("mark.evidence");
-              if (!evidence || !event.currentTarget.contains(evidence)) return;
-              event.preventDefault();
-              event.stopPropagation();
-              onRiskSpan({ paragraphId: paragraph.id, text: evidence.textContent?.trim() || "" });
-            }}
-            onClickCapture={(event) => {
-              const evidence = (event.target as HTMLElement).closest("mark.evidence");
-              if (!evidence || !event.currentTarget.contains(evidence)) return;
-              event.preventDefault();
-              event.stopPropagation();
-              onRiskSpan({ paragraphId: paragraph.id, text: evidence.textContent?.trim() || "" });
-            }}
-            onMouseUp={captureSelection}
-            onKeyUp={captureSelection}
-            onPaste={pastePlain}
-          >
-            {chunks.map((chunk, chunkIndex) => chunk.classification ? <mark
-              key={`${paragraph.id}-${chunkIndex}`}
-              className={`evidence ${chunk.classification}`}
-              role="button"
-              tabIndex={0}
-              title="发送到写作助手审阅"
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onRiskSpan({ paragraphId: paragraph.id, text: chunk.text });
-                }
-              }}
-              onKeyUp={(event) => event.stopPropagation()}
-            >{chunk.text}</mark> : chunk.text)}
-          </p>
-        );
-      })}
-    </article>
-  );
+export function PaperEditor({ paragraphs, ...props }: Props) {
+  return <article className={`paper-page ${props.stale ? "analysis-stale" : ""}`} aria-label="Editable paper">
+    {paragraphs.map((paragraph, index) => <EditableParagraph key={paragraph.id} paragraph={paragraph} index={index} {...props} />)}
+  </article>;
 }

@@ -161,15 +161,15 @@ def test_first_pass_mock_returns_reviewable_preview_without_changing_version(
     assert response.status_code == 201, response.text
     payload = response.json()
     assert payload["applied"] is False
-    assert payload["patch"]["isMock"] is True
-    assert payload["patch"]["status"] == "pending"
+    assert payload["document"]["patches"][0]["isMock"] is True
+    assert payload["document"]["patches"][0]["status"] == "pending"
     assert payload["targetParagraphCount"] >= 1
     refreshed = client.get(f"/api/v1/documents/{document['id']}", headers=headers).json()["document"]
     assert refreshed["currentVersion"]["id"] == document["currentVersion"]["id"]
     assert refreshed["analysis"]["isStale"] is False
 
 
-def test_first_pass_real_mode_applies_all_safe_revisions_as_one_version(
+def test_first_pass_real_mode_previews_then_explicitly_accepts_as_one_version(
     client: TestClient, headers: dict[str, str], coursework_text: str, monkeypatch
 ):
     document = create_document(client, headers, coursework_text)
@@ -201,12 +201,18 @@ def test_first_pass_real_mode_applies_all_safe_revisions_as_one_version(
     )
     assert response.status_code == 201, response.text
     payload = response.json()
-    assert payload["applied"] is True
-    assert payload["document"]["currentVersion"]["number"] == 2
-    assert payload["document"]["currentVersion"]["source"] == "agent-first-pass"
-    assert payload["document"]["analysis"]["isStale"] is True
+    assert payload["applied"] is False
+    assert payload["document"]["currentVersion"]["number"] == 1
+    assert payload["document"]["analysis"]["isStale"] is False
     assert payload["revisedParagraphCount"] == payload["targetParagraphCount"]
-    accepted = [patch for patch in payload["document"]["patches"] if patch["status"] == "accepted"]
+    response = client.post(f"/api/v1/rewrite-sessions/{payload['rewriteSessionId']}/batch-decision", headers=headers,
+        json={"expected_base_version_id": document["currentVersion"]["id"], "accepted_patch_ids": [p["id"] for p in payload["document"]["patches"]]})
+    assert response.status_code == 200
+    updated = response.json()["document"]
+    assert updated["currentVersion"]["number"] == 2
+    assert updated["currentVersion"]["source"] == "agent-first-pass"
+    assert updated["analysis"]["isStale"] is True
+    accepted = [patch for patch in updated["patches"] if patch["status"] == "accepted"]
     assert len(accepted) == payload["revisedParagraphCount"]
 
 

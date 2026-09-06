@@ -16,8 +16,11 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(12)}"
 
 
-def get_owned_document(db: Session, owner_email: str, document_id: str) -> Document:
-    document = db.scalar(select(Document).where(Document.id == document_id, Document.owner_email == owner_email))
+def get_owned_document(db: Session, owner_email: str, document_id: str, *, for_update: bool = False) -> Document:
+    query = select(Document).where(Document.id == document_id, Document.owner_email == owner_email)
+    if for_update:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    document = db.scalar(query)
     if not document or document.expires_at <= utcnow():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return document
@@ -78,6 +81,22 @@ def document_payload(db: Session, document: Document) -> dict:
             .limit(30)
         )
     )
+    # A preview may contain more than 30 paragraphs; never silently truncate it.
+    pending = list(db.scalars(select(PatchRecord).where(
+        PatchRecord.document_id == document.id, PatchRecord.base_version_id == current.id,
+        PatchRecord.status == "pending",
+    ).order_by(PatchRecord.created_at, PatchRecord.id)))
+    patches = list({patch.id: patch for patch in [*patches, *pending]}.values())
+    metadata = {}
+    for event in db.scalars(select(AuditEvent).where(
+        AuditEvent.resource_id == document.id, AuditEvent.action == "patch.proposed",
+    ).order_by(AuditEvent.created_at)):
+        details = event.details
+        metadata[details.get("patchId")] = {
+            "isMock": details.get("mock"), "provider": details.get("provider"),
+            "modelVersion": details.get("model"), "validatorModelVersion": details.get("validatorModel"),
+            "batch": details.get("batch", False),
+        }
     revision_numbers: dict[str, int] = {}
     patch_revision: dict[str, int] = {}
     for patch in sorted(patches, key=lambda item: (item.created_at, item.id)):
@@ -131,6 +150,7 @@ def document_payload(db: Session, document: Document) -> dict:
                 "createdAt": patch.created_at.isoformat(),
                 "rewriteSessionId": patch.rewrite_session_id,
                 "revisionNumber": patch_revision[patch.id],
+                **metadata.get(patch.id, {}),
             }
             for patch in patches
         ],

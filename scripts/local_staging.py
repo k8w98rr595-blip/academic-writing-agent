@@ -260,6 +260,20 @@ def smoke_checks(password: str) -> list[str]:
             assert analysis["isMock"] and analysis["spans"]
             assert all(span["classification"] in {"ai_generated", "ai_assisted"} for span in analysis["spans"])
             checks.append("synthetic document, Mock analysis and classified spans")
+            base = document["currentVersion"]
+            preview = request("POST", prefix + "/first-pass-rewrite", 201, headers=idempotency(),
+                              json={"version_id": base["id"]}).json()
+            assert preview["applied"] is False
+            batch = preview["document"]["patches"]
+            assert batch and all(patch["batch"] and patch["isMock"] for patch in batch)
+            updated = request("POST", f"/api/v1/rewrite-sessions/{preview['rewriteSessionId']}/batch-decision",
+                              json={"expected_base_version_id": base["id"],
+                                    "accepted_patch_ids": [patch["id"] for patch in batch]}).json()["document"]
+            assert updated["analysis"]["isStale"] and updated["currentVersion"]["number"] == 2
+            document = request("POST", prefix + f"/versions/{base['id']}/restore",
+                               json={"expected_current_version_id": updated["currentVersion"]["id"]}).json()["document"]
+            assert document["currentVersion"]["paragraphs"] == base["paragraphs"]
+            checks.append("persisted batch preview, explicit acceptance and whole-version restoration")
             session = request("POST", prefix + "/rewrite-sessions", 201,
                               json={"version_id": document["currentVersion"]["id"]}).json()["rewriteSession"]
             patch = request("POST", f"/api/v1/rewrite-sessions/{session['id']}/messages", 201,
@@ -271,7 +285,7 @@ def smoke_checks(password: str) -> list[str]:
             assert updated["analysis"]["isStale"] is True
             analysis = request("POST", prefix + "/analyses", 201, headers=idempotency()).json()["analysis"]["result"]
             assert "riskComparison" in analysis
-            assert request("POST", prefix + "/exports").content.startswith(b"PK")
+            assert request("POST", prefix + "/exports", json={"expected_version_id": updated["currentVersion"]["id"]}).content.startswith(b"PK")
             checks.append("Mock rewrite, patch acceptance, stale result, explicit recheck, comparison, DOCX")
         finally:
             if document_id:

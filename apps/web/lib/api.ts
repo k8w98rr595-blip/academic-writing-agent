@@ -76,9 +76,10 @@ export async function downloadExport(document: PaperDocument): Promise<void> {
   const token = sessionToken();
   const response = await fetch(`${apiBase()}/api/v1/documents/${document.id}/exports`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_version_id: document.currentVersion.id }),
   });
-  if (!response.ok) throw new Error("Export failed");
+  if (!response.ok) throw new Error(response.status === 409 ? "文稿版本已变化，请刷新并确认后再导出。" : "导出失败，文稿仍保留，请稍后重试。");
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = window.document.createElement("a");

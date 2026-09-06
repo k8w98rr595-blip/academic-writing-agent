@@ -962,6 +962,69 @@
         }
       }
     },
+    "/api/v1/rewrite-sessions/{session_id}/batch-decision": {
+      "post": {
+        "summary": "Decide Batch",
+        "operationId": "decide_batch_api_v1_rewrite_sessions__session_id__batch_decision_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/rewrite-sessions/{session_id}/messages": {
       "post": {
         "summary": "Rewrite Message",
@@ -1198,6 +1261,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ExportRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1276,6 +1356,31 @@
   },
   "components": {
     "schemas": {
+      "BatchDecisionRequest": {
+        "properties": {
+          "expected_base_version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Expected Base Version Id"
+          },
+          "accepted_patch_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 400,
+            "title": "Accepted Patch Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_base_version_id",
+          "accepted_patch_ids"
+        ],
+        "title": "BatchDecisionRequest"
+      },
       "BillingEventRequest": {
         "properties": {
           "event_name": {
@@ -1469,6 +1574,21 @@
           "paragraphs"
         ],
         "title": "DocumentUpdateRequest"
+      },
+      "ExportRequest": {
+        "properties": {
+          "expected_version_id": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Expected Version Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expected_version_id"
+        ],
+        "title": "ExportRequest"
       },
       "FirstPassRewriteRequest": {
         "properties": {

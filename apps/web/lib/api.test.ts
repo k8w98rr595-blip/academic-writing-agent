@@ -1,8 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { api, ApiError, isQuotaError, withIdempotency } from "./api";
+import { api, ApiError, downloadExport, isQuotaError, withIdempotency } from "./api";
+import type { PaperDocument } from "./types";
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe("version-bound Word export", () => {
+  it("sends the displayed saved version and refuses a stale export", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response("", { status: 409 }));
+    vi.stubGlobal("fetch", fetch);
+    vi.stubGlobal("sessionStorage", { getItem: () => null });
+    vi.stubGlobal("window", { PAPERLIGHT_CONFIG: { apiBaseUrl: "http://127.0.0.1:8100" } });
+    await expect(downloadExport({ id: "doc_test", currentVersion: { id: "version_test" } } as PaperDocument)).rejects.toThrow("文稿版本已变化");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ expected_version_id: "version_test" });
+  });
+});
 
 describe("local staging isolation", () => {
   it("refuses a production API before issuing any request", async () => {

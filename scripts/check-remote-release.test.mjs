@@ -10,6 +10,18 @@ function response(status, payload = null) {
   });
 }
 
+const commit = "a".repeat(40);
+const repositoryApi = "https://api.github.com/repos/k8w98rr595-blip/academic-writing-agent";
+function workflowRoutes(overrides = {}) {
+  return {
+    [repositoryApi + "/commits/main"]: response(200, { sha: commit }),
+    ...Object.fromEntries(["pages.yml", "production-smoke.yml"].map(workflow => [
+      repositoryApi + `/actions/workflows/${workflow}/runs?branch=main&per_page=1`,
+      response(200, { workflow_runs: [{ status: "completed", conclusion: "success", head_sha: commit, head_branch: "main", path: `.github/workflows/${workflow}`, ...overrides }] }),
+    ])),
+  };
+}
+
 function routeFetch(routes) {
   return async (url) => {
     const route = routes[String(url)];
@@ -45,9 +57,7 @@ test("public Pages and hardened Mock backend produce a ready release", async () 
         private: false,
         visibility: "public",
       }),
-      "https://api.github.com/repos/k8w98rr595-blip/academic-writing-agent/actions/runs?per_page=1": response(200, {
-        workflow_runs: [{ conclusion: "success", html_url: "https://github.com/example/run" }],
-      }),
+      ...workflowRoutes(),
       "https://k8w98rr595-blip.github.io/academic-writing-agent/": response(200),
       "https://paperlight.example.com/api/health": response(200, {
         ok: true,
@@ -83,9 +93,7 @@ test("detector and rewrite modes can be audited independently", async () => {
         private: false,
         visibility: "public",
       }),
-      "https://api.github.com/repos/k8w98rr595-blip/academic-writing-agent/actions/runs?per_page=1": response(200, {
-        workflow_runs: [{ conclusion: "success", html_url: "https://github.com/example/run" }],
-      }),
+      ...workflowRoutes(),
       "https://k8w98rr595-blip.github.io/academic-writing-agent/": response(200),
       "https://paperlight.example.com/api/health": response(200, {
         ok: true,
@@ -102,3 +110,22 @@ test("detector and rewrite modes can be audited independently", async () => {
   assert.equal(result.backend.auth.expectedRequiresTotp, false);
   assert.equal(result.productionReady, true);
 });
+
+for (const [name, change] of [
+  ["staging branch", { head_branch: "codex/local-staging" }],
+  ["old commit", { head_sha: "b".repeat(40) }],
+  ["wrong workflow", { path: ".github/workflows/local-staging.yml" }],
+  ["in progress", { status: "in_progress", conclusion: null }],
+  ["failed run", { conclusion: "failure" }],
+]) {
+  test(`rejects ${name} as production release evidence`, async () => {
+    const result = await runReleaseCheck(parseArgs([]), { fetchImpl: routeFetch({
+      [repositoryApi]: response(200, { private: false, visibility: "public" }),
+      ...workflowRoutes(change),
+      "https://k8w98rr595-blip.github.io/academic-writing-agent/": response(200),
+    }) });
+    assert.equal(result.actions.ok, false);
+    assert.equal(result.productionReady, false);
+    assert.equal(result.actions.workflows.length, 2);
+  });
+}

@@ -54,6 +54,8 @@ from .schemas import (
     BillingSummaryResponse,
     BillingTestPlanRequest,
     FirstPassRewriteRequest,
+    BatchDecisionRequest,
+    ExportRequest,
     LoginRequest,
     LoginResponse,
     PatchDecisionRequest,
@@ -370,7 +372,7 @@ def update_document(
     owner: str = Depends(current_owner),
     db: Session = Depends(get_db),
 ):
-    document = get_owned_document(db, owner, document_id)
+    document = get_owned_document(db, owner, document_id, for_update=True)
     if document.current_version_id != payload.base_version_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document changed; reload before saving")
     paragraphs = [{"id": row.id, "text": row.text.strip()} for row in payload.paragraphs]
@@ -389,7 +391,7 @@ def restore_document_version(
     owner: str = Depends(current_owner),
     db: Session = Depends(get_db),
 ):
-    document = get_owned_document(db, owner, document_id)
+    document = get_owned_document(db, owner, document_id, for_update=True)
     if document.current_version_id != payload.expected_current_version_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document changed; reload before restoring")
     target = get_version(db, document, version_id)
@@ -608,88 +610,101 @@ async def first_pass_rewrite(
         cancel_unused_reservations(
             [reservation_id for operation, reservation_id in reservations.items() if operation not in finalized_operations]
         )
-    db.refresh(document)
-    if document.current_version_id != version.id:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document changed during the first pass")
+    persisted = False
+    try:
+        document = get_owned_document(db, owner, document.id, for_update=True)
+        if document.current_version_id != version.id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Document changed during the first pass")
 
-    rewrite = RewriteSession(id=new_id("rewrite"), document_id=document.id, version_id=version.id)
-    db.add(rewrite)
-    db.flush()
-    if proposal["isMock"]:
-        revision = proposal["revisions"][0]
-        patch = PatchRecord(
-            id=new_id("patch"),
-            rewrite_session_id=rewrite.id,
-            document_id=document.id,
-            base_version_id=version.id,
-            paragraph_id=revision["paragraphId"],
-            original_text=revision["originalText"],
-            revised_text=revision["revisedText"],
-            reason=revision["reason"],
-            protected_status="Citations, numbers, quotations, URLs, and abbreviations preserved",
-        )
-        db.add(patch)
-        audit(db, owner, "patch.proposed", document.id, patchId=patch.id, mock=True, provider=proposal["provider"], model=proposal["modelVersion"])
+        # Both Mock and real providers produce a persisted preview. Only an explicit
+        # batch decision may change the immutable document version.
+        paragraphs = [dict(item) for item in version.paragraphs]
+        originals = {item["paragraphId"]: item["originalText"] for item in passages}
+        seen = set()
+        for revision in proposal["revisions"]:
+            paragraph_id = revision["paragraphId"]
+            if paragraph_id in seen or originals.get(paragraph_id) != revision["originalText"]:
+                raise HTTPException(status_code=409, detail="First pass no longer matches the document")
+            seen.add(paragraph_id)
+            assert_protected_equal(revision["originalText"], revision["revisedText"])
+            next(item for item in paragraphs if item["id"] == paragraph_id)["text"] = revision["revisedText"]
+        validate_paragraphs(paragraphs)
+        rewrite = RewriteSession(id=new_id("rewrite"), document_id=document.id, version_id=version.id)
+        db.add(rewrite)
+        db.flush()
+        for revision in proposal["revisions"]:
+            patch = PatchRecord(
+                id=new_id("patch"),
+                rewrite_session_id=rewrite.id,
+                document_id=document.id,
+                base_version_id=version.id,
+                paragraph_id=revision["paragraphId"],
+                original_text=revision["originalText"],
+                revised_text=revision["revisedText"],
+                reason=revision["reason"],
+                protected_status="Citations, numbers, quotations, URLs, and abbreviations preserved",
+            )
+            db.add(patch)
+            audit(db, owner, "patch.proposed", document.id, patchId=patch.id,
+                  mock=proposal["isMock"], provider=proposal["provider"], model=proposal["modelVersion"],
+                  validatorModel=proposal["validatorModelVersion"], batch=True)
         db.commit()
-        finalize_product_usage(product_usage_reservation_id, consumed=True)
+        persisted = True
         return {
             "applied": False,
-            "patch": {
-                "id": patch.id,
-                "baseVersionId": patch.base_version_id,
-                "paragraphId": patch.paragraph_id,
-                "originalText": patch.original_text,
-                "revisedText": patch.revised_text,
-                "reason": patch.reason,
-                "protectedStatus": patch.protected_status,
-                "status": patch.status,
-                "isMock": True,
-                "provider": proposal["provider"],
-                "modelVersion": proposal["modelVersion"],
-                "validatorModelVersion": None,
-                "rewriteSessionId": rewrite.id,
-                "revisionNumber": 1,
-                "contextScope": "document",
-                "contextCharacters": total_characters,
-                "supersedesPatchId": None,
-            },
+            "document": document_payload(db, document),
+            "rewriteSessionId": rewrite.id,
             "targetParagraphCount": len(passages),
+            "revisedParagraphCount": len(proposal["revisions"]),
         }
+    finally:
+        if not persisted:
+            db.rollback()
+        finalize_product_usage(product_usage_reservation_id, consumed=persisted)
 
+
+@app.post("/api/v1/rewrite-sessions/{session_id}/batch-decision")
+def decide_batch(session_id: str, payload: BatchDecisionRequest,
+                 owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+    rewrite = db.get(RewriteSession, session_id)
+    if not rewrite:
+        raise HTTPException(status_code=404, detail="Rewrite session not found")
+    document = get_owned_document(db, owner, rewrite.document_id, for_update=True)
+    if document.current_version_id != payload.expected_base_version_id or rewrite.version_id != payload.expected_base_version_id:
+        raise HTTPException(status_code=409, detail="Batch preview is stale; document was not changed")
+    patches = list(db.scalars(select(PatchRecord).where(PatchRecord.rewrite_session_id == rewrite.id).with_for_update()))
+    accepted_ids = set(payload.accepted_patch_ids)
+    if not patches or any(patch.status != "pending" or patch.base_version_id != rewrite.version_id for patch in patches):
+        raise HTTPException(status_code=409, detail="Batch preview is already decided or stale")
+    if len(accepted_ids) != len(payload.accepted_patch_ids) or not accepted_ids.issubset({patch.id for patch in patches}):
+        raise HTTPException(status_code=422, detail="Invalid batch selection")
+    version = get_version(db, document)
     paragraphs = [dict(item) for item in version.paragraphs]
-    revisions_by_id = {item["paragraphId"]: item for item in proposal["revisions"]}
-    for paragraph in paragraphs:
-        revision = revisions_by_id.get(paragraph["id"])
-        if revision:
-            assert_protected_equal(paragraph["text"], revision["revisedText"])
-            paragraph["text"] = revision["revisedText"]
-    count = validate_paragraphs(paragraphs)
-    create_version(db, document, paragraphs, count, "agent-first-pass")
-    for revision in proposal["revisions"]:
-        patch = PatchRecord(
-            id=new_id("patch"),
-            rewrite_session_id=rewrite.id,
-            document_id=document.id,
-            base_version_id=version.id,
-            paragraph_id=revision["paragraphId"],
-            original_text=revision["originalText"],
-            revised_text=revision["revisedText"],
-            reason=revision["reason"],
-            protected_status="Citations, numbers, quotations, URLs, and abbreviations preserved",
-            status="accepted",
-            decided_at=utcnow(),
-        )
-        db.add(patch)
-        audit(db, owner, "patch.accepted", document.id, patchId=patch.id)
-    audit(db, owner, "document.version", document.id, source="agent-first-pass", wordCount=count)
+    targets = {item["id"]: item for item in paragraphs}
+    seen = set()
+    for patch in patches:
+        target = targets.get(patch.paragraph_id)
+        if patch.paragraph_id in seen or not target or target["text"] != patch.original_text:
+            raise HTTPException(status_code=409, detail="Batch paragraph no longer matches")
+        seen.add(patch.paragraph_id)
+        if patch.id in accepted_ids:
+            assert_protected_equal(patch.original_text, patch.revised_text)
+            target["text"] = patch.revised_text
+    if accepted_ids:
+        create_version(db, document, paragraphs, validate_paragraphs(paragraphs), "agent-first-pass")
+        # Other previews cannot decorate or mutate the new version.
+        for other in db.scalars(select(PatchRecord).where(
+            PatchRecord.document_id == document.id, PatchRecord.status == "pending",
+            PatchRecord.rewrite_session_id != rewrite.id,
+        )):
+            other.status = "superseded"
+            other.decided_at = utcnow()
+    for patch in patches:
+        patch.status = "accepted" if patch.id in accepted_ids else "rejected"
+        patch.decided_at = utcnow()
+        audit(db, owner, f"patch.{patch.status}", document.id, patchId=patch.id)
     db.commit()
-    finalize_product_usage(product_usage_reservation_id, consumed=True)
-    return {
-        "applied": True,
-        "document": document_payload(db, document),
-        "targetParagraphCount": len(passages),
-        "revisedParagraphCount": len(proposal["revisions"]),
-    }
+    return {"document": document_payload(db, document), "acceptedCount": len(accepted_ids)}
 
 
 @app.post("/api/v1/rewrite-sessions/{session_id}/messages", status_code=status.HTTP_201_CREATED)
@@ -873,7 +888,7 @@ def accept_patch(
     patch = db.scalar(select(PatchRecord).where(PatchRecord.id == patch_id))
     if not patch:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patch not found")
-    document = get_owned_document(db, owner, patch.document_id)
+    document = get_owned_document(db, owner, patch.document_id, for_update=True)
     if patch.status != "pending" or patch.base_version_id != payload.expected_base_version_id or document.current_version_id != patch.base_version_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Patch is stale or already decided")
     version = get_version(db, document, patch.base_version_id)
@@ -926,9 +941,11 @@ def reject_patch(
 
 
 @app.post("/api/v1/documents/{document_id}/exports")
-def export_document(document_id: str, owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+def export_document(document_id: str, payload: ExportRequest | None = None, owner: str = Depends(current_owner), db: Session = Depends(get_db)):
     require_entitlement(db, owner, "docx_import_export")
     document = get_owned_document(db, owner, document_id)
+    if payload and document.current_version_id != payload.expected_version_id:
+        raise HTTPException(status_code=409, detail="文稿版本已变化，请刷新并确认后再导出。")
     version = get_version(db, document)
     payload = build_docx(document.title, version.paragraphs, version.version_number)
     safe_filename = re.sub(r"[^A-Za-z0-9_-]+", "-", document.title).strip("-")[:60] or "paperlight-document"

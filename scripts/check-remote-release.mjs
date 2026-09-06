@@ -7,6 +7,7 @@ const DEFAULTS = {
   expectedDetectorMode: "mock",
   expectedRewriteMode: "mock",
   expectedRequiresTotp: false,
+  expectedCommit: "",
   json: false,
 };
 
@@ -48,6 +49,10 @@ export function parseArgs(argv) {
         throw new Error("--expected-requires-totp must be true or false");
       }
       options.expectedRequiresTotp = value === "true";
+      index += 1;
+    } else if (flag === "--expected-commit") {
+      options.expectedCommit = takeValue(argv, index, flag);
+      if (!/^[a-f0-9]{40}$/.test(options.expectedCommit)) throw new Error("--expected-commit must be a full Git SHA");
       index += 1;
     } else if (flag === "--json") {
       options.json = true;
@@ -136,21 +141,22 @@ export async function runReleaseCheck(options, { fetchImpl = fetch } = {}) {
     code: repositoryPublic ? "actions_unavailable" : "repository_not_public",
   };
   if (repositoryPublic) {
-    const actionsResponse = await request(fetchImpl, `${repositoryApi}/actions/runs?per_page=1`, { json: true });
-    const latest = actionsResponse.payload?.workflow_runs?.[0] ?? null;
+    const commit = options.expectedCommit || (await request(fetchImpl, `${repositoryApi}/commits/main`, { json: true })).payload?.sha;
+    const workflows = await Promise.all(["pages.yml", "production-smoke.yml"].map(async workflow => {
+      const response = await request(fetchImpl, `${repositoryApi}/actions/workflows/${workflow}/runs?branch=main&per_page=1`, { json: true });
+      const latest = response.payload?.workflow_runs?.[0];
+      const matches = /^[a-f0-9]{40}$/.test(commit || "") && latest?.head_branch === "main" && latest?.head_sha === commit
+        && latest?.path === `.github/workflows/${workflow}`;
+      return { workflow, commit: latest?.head_sha ?? null, url: latest?.html_url ?? null,
+        status: response.status, conclusion: latest?.conclusion ?? null,
+        ok: response.status === 200 && matches && latest?.status === "completed" && latest?.conclusion === "success",
+        code: response.status !== 200 ? "actions_unavailable" : !latest ? "actions_missing"
+          : !matches ? "actions_release_mismatch" : latest?.status !== "completed" || latest?.conclusion !== "success" ? "actions_not_successful" : null };
+    }));
+    const failed = workflows.find(workflow => !workflow.ok);
     actions = {
-      ok: actionsResponse.status === 200 && latest?.conclusion === "success",
-      status: actionsResponse.status,
-      conclusion: latest?.conclusion ?? null,
-      url: latest?.html_url ?? null,
-      code:
-        actionsResponse.status !== 200
-          ? "actions_unavailable"
-          : latest?.conclusion === "success"
-            ? null
-            : latest
-              ? "actions_not_successful"
-              : "actions_missing",
+      ok: !failed, status: failed?.status ?? 200, conclusion: failed?.conclusion ?? "success",
+      url: workflows[0].url, code: failed?.code ?? null, expectedCommit: commit ?? null, workflows,
     };
   }
 
@@ -233,6 +239,7 @@ export async function runReleaseCheck(options, { fetchImpl = fetch } = {}) {
     backend,
     frontendReady,
     productionReady,
+    verificationScope: "Public reachability, owner auth boundary and main workflow completion only; not authenticated E2E, deployed API commit, dependency readiness or commercial launch approval.",
     blockers: [...new Set(blockers)],
   };
 }
@@ -261,6 +268,7 @@ function helpText() {
     "  --expected-detector-mode mock     Expected detector mode",
     "  --expected-rewrite-mode deepseek  Expected rewrite mode",
     "  --expected-requires-totp false    Expected owner TOTP requirement",
+    "  --expected-commit <full Git SHA>  Pin both main workflows; otherwise use current origin main",
     "  --json                            Emit JSON",
     "  --help                            Show this help",
   ].join("\n");

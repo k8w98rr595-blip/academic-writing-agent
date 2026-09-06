@@ -22,6 +22,7 @@ from .models import AuditEvent, SessionRecord
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
 
 AUDIT_DETAIL_ALLOWLIST = {
+    "batch",
     "analysisId",
     "ipHash",
     "mock",

@@ -24,7 +24,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         <meta
           httpEquiv="Content-Security-Policy"
-          content={`default-src 'self'; ${scriptPolicy}; style-src 'self' 'unsafe-inline'; connect-src ${connectPolicy}; img-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'`}
+          content={`default-src 'self'; ${scriptPolicy}; style-src 'self' 'unsafe-inline'; connect-src ${connectPolicy}; img-src 'self' data: blob:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'`}
         />
         <script src={`${basePath}/config.js`} defer />
       </head>

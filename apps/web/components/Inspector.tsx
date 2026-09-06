@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Check, ChevronLeft, ChevronRight, Clock3, FileCheck2, RotateCcw, ShieldCheck, Sparkles, X } from "lucide-react";
 import { AGENT_CONTEXT_OPTIONS, type AgentContextScope } from "@/lib/agent";
 import type { LegacyDetectionResult, PangramDetectionResult, PaperDocument, Patch, VersionSummary } from "@/lib/types";
@@ -12,6 +13,8 @@ type Props = {
   document: PaperDocument;
   selectedText: string;
   pendingPatch: Patch | null;
+  batchPatches: Patch[];
+  onBatchDecision: (ids: string[]) => void;
   instruction: string;
   contextScope: AgentContextScope;
   fullDocumentConfirmed: boolean;
@@ -73,10 +76,10 @@ function CurrentDetectionPanel({ result, stale, busy, initialOneClickAvailable, 
     {warnings.length ? <section className="detection-warnings"><h3>检测说明</h3><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></section> : null}
     {stale ? <div className="stale-notice"><Clock3 size={18} /><div><strong>检测结果已过期</strong><span>文稿在本次检测后发生了修改，旧范围不会继续高亮当前版本。</span><button onClick={onAnalyze}>重新检测当前版本</button></div></div> : null}
     {!failed && !stale && result.spans.length ? initialOneClickAvailable
-      ? <button className="button primary wide" disabled={busy} onClick={onInitialOneClick}>{busy ? "正在生成并应用..." : "一键降低"}</button>
+      ? <button className="button primary wide" disabled={busy} onClick={onInitialOneClick}>{busy ? "正在准备批量预览..." : "预览风险段落修改"}</button>
       : <button className="button primary wide" onClick={() => onTab("agent")}>选择蓝色片段进入写作助手</button>
       : <button className="button primary wide" disabled={busy} onClick={onAnalyze}>{busy ? "正在分析..." : "重新运行 AI 写作风险检测"}</button>}
-    {initialOneClickAvailable ? <p className="one-click-note">本轮检测首次修改会一次处理全部带风险标记的段落。通过保护规则和语义校验后直接保存为可恢复的新版本；不会自动复检，也不承诺具体分数。</p> : null}
+    {initialOneClickAvailable ? <p className="one-click-note">一次处理全部带风险标记的段落，先展示差异；只有你明确接受才保存为可恢复的新版本。不会自动复检，也不承诺具体分数。</p> : null}
     <p className="detection-cost-note">{result.isMock ? "当前演示检测不会产生 Pangram 费用。切换到真实 Pangram 后，只有你明确点击检测才会提交可能计费的任务。" : "真实 Pangram 检测按量计费。本次检测由你明确点击发起；编辑和保存不会自动复检。"}</p>
     <p className="inspector-disclaimer">{mockDisclaimer(result.isMock, result.disclaimer)}</p>
   </div>;
@@ -112,9 +115,29 @@ function AgentPanel(props: Pick<Props, "selectedText" | "pendingPatch" | "instru
     return <div className="patch-panel"><div className="patch-title"><div><span className="eyebrow">REVIEWABLE PATCH</span><h2>建议修改 · 版本 {pendingPatch.revisionNumber || 1}</h2><p>{providerLabel}{pendingPatch.contextCharacters ? ` · 本轮上下文 ${pendingPatch.contextCharacters.toLocaleString()} 字符` : ""}</p></div></div><section className="patch-comparison"><label>原文<blockquote>{pendingPatch.originalText}</blockquote></label><span className="patch-arrow">→</span><label>建议稿<blockquote className="suggested">{pendingPatch.revisedText}</blockquote></label></section><details className="patch-reason" open><summary>修改说明</summary><p>{pendingPatch.reason}</p></details><div className="protected-row"><ShieldCheck size={18} /><span>{validatorLabel}</span></div><section className="agent-refine"><h3>继续调整这份建议</h3><p>输入下一轮要求。Agent 会基于当前建议继续修改，但最终补丁仍以原文为锚点。</p><AgentContextControls {...props} /><label>继续修改要求<textarea value={instruction} onChange={(event) => onInstruction(event.target.value)} placeholder="例如：再简洁一点，但保留第一句话和全部专业术语。" /></label><button className="button secondary wide" disabled={busy || contextBlocked || instruction.trim().length < 2} onClick={onPropose}>{busy ? "正在准备下一版..." : "生成下一版建议"}</button></section><div className="patch-actions"><button className="button secondary" disabled={busy} onClick={() => onReject(pendingPatch)}><X size={17} />保留原文</button><button className="button primary" disabled={busy || pendingPatch.originalText === pendingPatch.revisedText} onClick={() => onAccept(pendingPatch)}><Check size={17} />接受此修改</button></div></div>;
   }
   if (props.initialOneClickAvailable) {
-    return <div className="agent-compose initial-one-click"><div className="compose-intro"><Sparkles size={25} /><span className="eyebrow">FIRST PASS</span><h2>先完成本轮检测的第一次自然化修改</h2><p>系统会一次处理所有带风险标记的段落，减少模板化过渡、空泛修饰、重复句式和机械节奏。真实 DeepSeek 必须保持原意、主题、立场、确定程度、数据、引文和专业术语不变，并通过独立语义校验。</p></div><div className="selection-preview"><strong>本次处理范围</strong><p>{props.initialOneClickTargetText || "将处理本轮检测标记的风险段落。"}</p></div><button className="button primary wide" disabled={busy} onClick={props.onInitialOneClick}>{busy ? "正在生成并应用..." : "一键降低"}</button><p className="one-click-note">真实模式下，点击即接受全部通过校验的首次修改，并原子保存为一个可恢复的新版本；Mock 演示模式只生成预览。完成后进入当前的逐条审阅模式。检测器存在误差，因此不会承诺具体分数，也不会自动发起付费复检。</p></div>;
+    return <div className="agent-compose initial-one-click"><div className="compose-intro"><Sparkles size={25} /><span className="eyebrow">FIRST PASS</span><h2>先预览风险段落的修改建议</h2><p>系统会一次处理所有带风险标记的段落，减少模板化过渡、空泛修饰、重复句式和机械节奏。真实 DeepSeek 必须保持原意、主题、立场、确定程度、数据、引文和专业术语不变，并通过独立语义校验。</p></div><div className="selection-preview"><strong>本次处理范围</strong><p>{props.initialOneClickTargetText || "将处理本轮检测标记的风险段落。"}</p></div><button className="button primary wide" disabled={busy} onClick={props.onInitialOneClick}>{busy ? "正在准备批量预览..." : "预览风险段落修改"}</button><p className="one-click-note">真实和 Mock 模式都先生成可审阅预览；逐段勾选后一次保存，未勾选段落保留原文。生成真实建议可能产生 DeepSeek 费用，但预览确认和回退不再次调用模型；不会自动付费复检。</p></div>;
   }
   return <div className="agent-compose"><div className="compose-intro"><Sparkles size={25} /><span className="eyebrow">DEEPSEEK WRITING AGENT</span><h2>由作者控制每一次修改</h2><p>点击蓝色风险片段或在论文中选择文字，再说明你想改进的方向。Agent 只提出可撤销补丁，不会自动应用修改、自动复检或根据检测分数循环改写。</p></div><div className="selection-preview"><strong>当前选中内容</strong><p>{selectedText || "尚未选择文本，将审阅当前活动段落。"}</p></div><AgentContextControls {...props} /><label>修改要求<textarea value={instruction} onChange={(event) => onInstruction(event.target.value)} placeholder="例如：让论证更具体，并说明证据如何支持主张，但不要改变原意。" /></label><button className="button primary wide" disabled={busy || contextBlocked || instruction.trim().length < 2} onClick={onPropose}>{busy ? "正在准备补丁..." : "生成可审阅补丁"}</button></div>;
+}
+
+function BatchPreview({ patches, busy, onDecision }: { patches: Patch[]; busy: boolean; onDecision: (ids: string[]) => void }) {
+  const [selected, setSelected] = useState(() => new Set(patches.map(patch => patch.id)));
+  return <div className="patch-panel batch-preview">
+    <span className="eyebrow">BATCH PREVIEW</span><h2>批量修改预览</h2>
+    <p>{patches.every(patch => patch.isMock) ? "演示结果 · Mock 建议" : "写作建议 · 请人工审阅"} · {patches.length} 个段落；正文尚未改变。</p>
+    <p>逐段勾选想接受的修改；未勾选项保留原文。确认后只创建一个新版本，可在版本记录中整体恢复。</p>
+    {patches.map((patch, index) => <section className="batch-item" key={patch.id}>
+      <label className="batch-choice"><input type="checkbox" checked={selected.has(patch.id)} disabled={busy}
+        onChange={event => { const checked = event.target.checked; setSelected(current => { const next = new Set(current); if (checked) next.add(patch.id); else next.delete(patch.id); return next; }); }} />接受段落 {index + 1} 的修改</label>
+      <details open={patches.length <= 3}><summary>查看原文与建议</summary>
+        <section className="patch-comparison"><label>原文<blockquote>{patch.originalText}</blockquote></label>
+        <label>建议稿<blockquote className="suggested">{patch.revisedText}</blockquote></label></section><p>{patch.reason}</p>
+      </details>
+    </section>)}
+    <div className="batch-actions"><button className="button secondary wide" disabled={busy} onClick={() => onDecision([])}>整批保留原文</button>
+      <button className="button primary wide" disabled={busy || !selected.size} onClick={() => onDecision([...selected])}>接受所选 {selected.size} 项并保存</button></div>
+    <p className="inspector-disclaimer">保护规则和语义校验不能替代作者核对事实、公式与专有名词；接受与保留操作不触发检测或改写费用。</p>
+  </div>;
 }
 
 function VersionsPanel({ document, busy, onRestore }: Pick<Props, "document" | "busy" | "onRestore">) {
@@ -125,5 +148,5 @@ export function Inspector(props: Props) {
   if (props.collapsed) {
     return <aside className="inspector collapsed"><button className="inspector-expand" onClick={props.onToggleCollapsed} title="展开侧栏"><ChevronLeft size={20} /><span>展开助手</span></button></aside>;
   }
-  return <aside className={`inspector inspector-${props.tab}`}><header className="inspector-header"><div><Sparkles size={19} /><strong>{props.tab === "agent" ? "写作助手" : props.tab === "detection" ? "AI 写作风险检测" : "版本记录"}</strong>{props.tab === "agent" ? <span>DeepSeek</span> : null}</div><button onClick={props.onToggleCollapsed} title="收起侧栏"><ChevronRight size={19} /></button></header><nav className="inspector-tabs" aria-label="文稿检查器">{(["agent", "detection", "versions"] as InspectorTab[]).map((tab) => <button key={tab} className={props.tab === tab ? "active" : ""} onClick={() => props.onTab(tab)}>{tab === "agent" ? "写作助手" : tab === "detection" ? "AI 风险" : "版本"}</button>)}</nav><div className="inspector-body">{props.tab === "detection" ? <DetectionPanel {...props} /> : props.tab === "agent" ? <AgentPanel {...props} /> : <VersionsPanel {...props} />}</div></aside>;
+  return <aside className={`inspector inspector-${props.tab}`}><header className="inspector-header"><div><Sparkles size={19} /><strong>{props.tab === "agent" ? "写作助手" : props.tab === "detection" ? "AI 写作风险检测" : "版本记录"}</strong>{props.tab === "agent" ? <span>DeepSeek</span> : null}</div><button onClick={props.onToggleCollapsed} title="收起侧栏"><ChevronRight size={19} /></button></header><nav className="inspector-tabs" aria-label="文稿检查器">{(["agent", "detection", "versions"] as InspectorTab[]).map((tab) => <button key={tab} className={props.tab === tab ? "active" : ""} onClick={() => props.onTab(tab)}>{tab === "agent" ? "写作助手" : tab === "detection" ? "AI 风险" : "版本"}</button>)}</nav><div className="inspector-body">{props.tab === "detection" ? <DetectionPanel {...props} /> : props.tab === "agent" ? <>{props.batchPatches.length ? <BatchPreview key={props.batchPatches[0].rewriteSessionId} patches={props.batchPatches} busy={props.busy} onDecision={props.onBatchDecision} /> : <AgentPanel {...props} />}</> : <VersionsPanel {...props} />}</div></aside>;
 }

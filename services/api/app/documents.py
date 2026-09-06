@@ -6,6 +6,9 @@ import zipfile
 from pathlib import Path
 
 from docx import Document as WordDocument
+from docx.oxml.ns import qn
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from fastapi import HTTPException, status
 
 from .text import normalize_text
@@ -54,15 +57,52 @@ def extract_docx_text(payload: bytes) -> str:
         document = WordDocument(io.BytesIO(payload))
     except Exception as error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unable to parse Word document") from error
-    blocks = [normalize_text(paragraph.text) for paragraph in document.paragraphs if normalize_text(paragraph.text)]
-    for table in document.tables:
-        rows = []
-        for row in table.rows:
-            cells = [normalize_text(cell.text) for cell in row.cells]
-            if any(cells):
-                rows.append(" | ".join(cells))
-        if rows:
-            blocks.append("\n".join(rows))
+    # Fail closed instead of silently dropping academic content that this plain
+    # text workspace cannot represent. Never follow relationships to remote data.
+    unsupported = {
+        "m:oMath": "公式", "m:oMathPara": "公式", "w:drawing": "图片或图形",
+        "w:pict": "图片或文本框", "w:object": "嵌入对象", "w:footnoteReference": "脚注",
+        "w:endnoteReference": "尾注", "w:ins": "修订记录", "w:del": "修订记录",
+        "w:moveFrom": "修订记录", "w:moveTo": "修订记录", "w:altChunk": "嵌入内容",
+        "w:sdt": "内容控件", "w:fldSimple": "动态域", "w:fldChar": "动态域",
+        "w:commentReference": "批注", "w:numPr": "自动编号列表",
+    }
+    tags = {node.tag for node in document.element.iter()}
+    found = sorted({label for tag, label in unsupported.items() if qn(tag) in tags})
+    for relationship in document.part.rels.values():
+        if relationship.reltype.endswith(("/header", "/footer")):
+            # These are local parts already parsed by python-docx, not URLs.
+            if any((node.text or "").strip() for node in relationship.target_part.element.iter(qn("w:t"))):
+                found.append("页眉或页脚正文")
+    if found:
+        raise HTTPException(status_code=422, detail="当前纯文本导入不支持：" + "、".join(sorted(set(found))) + "。请保留原文件，并改用经人工核对的正文副本。")
+    blocks = []
+    for element in document.element.body.iterchildren():
+        if element.tag == qn("w:p"):
+            paragraph = Paragraph(element, document)
+            style = paragraph.style
+            visited = set()
+            while style is not None and style.style_id not in visited:
+                visited.add(style.style_id)
+                if any(node.tag == qn("w:numPr") for node in style.element.iter()):
+                    raise HTTPException(status_code=422, detail="当前纯文本导入不支持自动编号列表，请先人工整理正文副本。")
+                style = style.base_style
+            text = normalize_text(paragraph.text)
+            if text:
+                blocks.append(text)
+        elif element.tag == qn("w:tbl"):
+            table = Table(element, document)
+            if any(node.tag in {qn("w:gridSpan"), qn("w:vMerge"), qn("w:hMerge")} for node in element.iter()) or len(list(element.iter(qn("w:tbl")))) != 1:
+                raise HTTPException(status_code=422, detail="当前纯文本导入不支持合并单元格或嵌套表格，请先人工整理正文副本。")
+            rows = []
+            for row in table.rows:
+                cells = [normalize_text(cell.text) for cell in row.cells]
+                if any(cells):
+                    rows.append(" | ".join(cells))
+            if rows:
+                blocks.append("\n".join(rows))
+        elif element.tag != qn("w:sectPr"):
+            raise HTTPException(status_code=422, detail="Word 含有当前无法可靠保留的正文结构，请改用经人工核对的纯文本。")
     return "\n\n".join(blocks)
 
 

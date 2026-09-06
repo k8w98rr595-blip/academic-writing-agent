@@ -69,6 +69,7 @@ export type Patch = {
   contextScope?: "selection" | "paragraph" | "section" | "document";
   contextCharacters?: number;
   supersedesPatchId?: string | null;
+  batch?: boolean;
 };
 
 export type VersionSummary = {

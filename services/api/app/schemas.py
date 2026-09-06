@@ -55,6 +55,16 @@ class PatchDecisionRequest(BaseModel):
     expected_base_version_id: str = Field(min_length=3, max_length=64)
 
 
+class BatchDecisionRequest(PatchDecisionRequest):
+    model_config = ConfigDict(extra="forbid")
+    # Empty means explicitly retain the original for the entire batch.
+    accepted_patch_ids: list[str] = Field(max_length=400)
+
+
+class ExportRequest(BaseModel):
+    expected_version_id: str = Field(min_length=3, max_length=64)
+
+
 class RestoreVersionRequest(BaseModel):
     expected_current_version_id: str = Field(min_length=3, max_length=64)
 
