@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .models import AnalysisRun, AuditEvent, Document, DocumentQuotaRecord, DocumentVersion, JobRecord, PatchRecord, RewriteSession, utcnow
 from .storage import get_object_storage
+from .text import text_metrics
 
 
 def new_id(prefix: str) -> str:
@@ -113,6 +114,7 @@ def document_payload(db: Session, document: Document) -> dict:
             "number": current.version_number,
             "paragraphs": current.paragraphs,
             "wordCount": current.word_count,
+            **text_metrics("\n\n".join(p["text"] for p in current.paragraphs)),
             "source": current.source,
             "createdAt": current.created_at.isoformat(),
         },
@@ -121,6 +123,7 @@ def document_payload(db: Session, document: Document) -> dict:
                 "id": version.id,
                 "number": version.version_number,
                 "wordCount": version.word_count,
+                **text_metrics("\n\n".join(p["text"] for p in version.paragraphs)),
                 "source": version.source,
                 "createdAt": version.created_at.isoformat(),
             }

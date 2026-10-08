@@ -1,5 +1,11 @@
 # Production deployment handoff
 
+## Current scope — 2026-10-08
+
+The Turnitin-method imitation research target was explicitly cancelled. Current product direction is Chinese/English student writing with author-controlled revision. This release adds a public **browser-local** experience and Chinese cloud support, while student cloud registration and public paid AI remain disabled. The operator name and support email are explicitly not yet determined. The historical acceptance records below describe their original release dates, not new acceptance of student cloud access.
+
+See [Public launch gates](PUBLIC_LAUNCH.md) and [October 8 verification](PUBLIC_LOCAL_RELEASE_2026-10-08.md). Keep the existing owner Pangram/DeepSeek settings and TOTP state unchanged. Fresh installs remain Mock by default. The new migration creates `user_accounts` idempotently without changing historical documents or analyses. New owner and student sessions have separate trusted identities; client fields cannot select another owner's data or role.
+
 The owner-only release is deployed from `main`. It is scoped to AI writing-risk detection and author-controlled revision; plagiarism/similarity checking is intentionally excluded. It uses real Pangram 4 for probabilistic risk detection, DeepSeek V4 Pro for rewrite proposals, and V4 Flash for semantic-safety validation. Public or student access remains closed.
 
 The current writing flow is a multi-turn Agent patch review: select a passage, request a structured proposal, optionally refine that proposal in the same session, then explicitly accept or reject it. The original passage stays immutable across revisions; context is reconstructed server-side, full-document context requires explicit confirmation, and neither patch application nor re-detection is automatic.

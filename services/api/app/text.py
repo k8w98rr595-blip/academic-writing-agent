@@ -13,9 +13,9 @@ MAX_PARAGRAPHS = 400
 
 PROTECTED_PATTERN = re.compile(
     r"https?://\S+|\[[0-9,\-\s]+\]|\([A-Z][A-Za-z'’-]+(?:\s+et al\.)?,?\s+\d{4}[a-z]?\)|"
-    r"\b\d+(?:\.\d+)?%?\b|\b[A-Z]{2,}[A-Z0-9-]*\b|[\"“”][^\"“”]{2,240}[\"“”]"
+    r"(?<![\d.])\d+(?:\.\d+)?%?(?!\d)|\b[A-Z]{2,}[A-Z0-9-]*\b|[\"“”][^\"“”]{2,240}[\"“”]|《[^》]{1,160}》"
 )
-SENTENCE_PATTERN = re.compile(r"[^.!?]+(?:[.!?]+|$)", re.MULTILINE)
+SENTENCE_PATTERN = re.compile(r"[^.!?。！？]+(?:[.!?。！？]+|$)", re.MULTILINE)
 
 
 def normalize_text(value: str) -> str:
@@ -23,19 +23,31 @@ def normalize_text(value: str) -> str:
 
 
 def word_count(value: str) -> int:
-    return len(re.findall(r"\b[\w’'-]+\b", value, flags=re.UNICODE))
+    return text_metrics(value)["count"]
+
+
+def text_metrics(value: str) -> dict:
+    chinese = len(re.findall(r"[\u3400-\u9fff]", value))
+    words = len(re.findall(r"[A-Za-z0-9_]+(?:[’'-][A-Za-z0-9_]+)*", value))
+    is_chinese = chinese > 0 and chinese >= len(re.findall(r"[A-Za-z]", value)) / 3
+    return {"language": "zh" if is_chinese else "en", "count": chinese + words if is_chinese else words,
+            "unit": "字/词" if is_chinese else "词"}
 
 
 def validate_english_coursework(value: str) -> int:
+    # Retained import name for compatibility; the workspace now accepts Chinese.
+    metrics = text_metrics(value)
+    if len(value) > 100000:
+        raise HTTPException(422, "文稿过长，请拆分为章节")
+    if metrics["language"] == "zh":
+        if not 500 <= metrics["count"] <= 12000:
+            raise HTTPException(422, "中文文稿需包含 500 至 12,000 字/词；长论文请分章处理")
+        return metrics["count"]
     count = word_count(value)
     if count < MIN_WORDS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Paper must contain at least {MIN_WORDS} words")
     if count > MAX_WORDS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=f"Paper must contain at most {MAX_WORDS} words")
-    letters = re.findall(r"[A-Za-z]", value[:12000])
-    non_latin = re.findall(r"[\u4e00-\u9fff]", value[:12000])
-    if len(letters) < max(200, len(non_latin) * 3):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="V1 accepts English coursework only")
     return count
 
 
@@ -44,7 +56,7 @@ def paragraphs_from_text(value: str, previous: list[dict] | None = None) -> list
     chunks = [item.strip() for item in re.split(r"\n\s*\n", normalized) if item.strip()]
     if len(chunks) == 1:
         chunks = [item.strip() for item in normalized.split("\n") if item.strip()]
-    if not chunks or len(chunks) > MAX_PARAGRAPHS:
+    if not chunks or len(chunks) > MAX_PARAGRAPHS or any(len(chunk) > 40000 for chunk in chunks):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid paragraph count")
     previous = previous or []
     result = []
@@ -62,7 +74,7 @@ def validate_paragraphs(paragraphs: list[dict]) -> int:
     for paragraph in paragraphs:
         paragraph_id = str(paragraph.get("id", ""))
         text = normalize_text(str(paragraph.get("text", "")))
-        if not paragraph_id or paragraph_id in ids or not text:
+        if not paragraph_id or paragraph_id in ids or not text or len(text) > 40000:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid paragraph data")
         ids.add(paragraph_id)
         normalized.append(text)

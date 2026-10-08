@@ -33,7 +33,6 @@ def _restrict_windows_acl(path: Path) -> None:
         ],
         check=True,
         capture_output=True,
-        text=True,
     )
 
 

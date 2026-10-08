@@ -22,6 +22,8 @@ jobs:
           EXPECTED_REWRITE_MODE: ${{ vars.PAPERLIGHT_EXPECTED_REWRITE_MODE || 'deepseek' }}
           EXPECTED_REQUIRES_TOTP: ${{ vars.PAPERLIGHT_EXPECTED_REQUIRES_TOTP || 'false' }}
           EXPECTED_BILLING_MODE: ${{ vars.PAPERLIGHT_EXPECTED_BILLING_MODE || 'disabled' }}
+          EXPECTED_PUBLIC_REGISTRATION: ${{ vars.PAPERLIGHT_EXPECTED_PUBLIC_REGISTRATION || 'false' }}
+          EXPECTED_PUBLIC_AI: ${{ vars.PAPERLIGHT_EXPECTED_PUBLIC_AI || 'false' }}
         run: |
           set -euo pipefail
           test -n "$BACKEND_URL"
@@ -38,6 +40,13 @@ jobs:
 
           protected_status="$(curl "${retry[@]}" --output /dev/null --write-out '%{http_code}' "$BACKEND_URL/api/v1/documents")"
           test "$protected_status" = "401"
+
+          public_config="$(curl "${retry[@]}" --fail "$BACKEND_URL/api/v1/public/config")"
+          jq -e --argjson registration "$EXPECTED_PUBLIC_REGISTRATION" --argjson ai "$EXPECTED_PUBLIC_AI" \
+            '.localExperienceAvailable == true and .registrationEnabled == $registration and .publicAiEnabled == $ai' <<<"$public_config" >/dev/null
+
+          public_home="$(curl "${retry[@]}" --fail "$PAGES_URL/")"
+          grep -F '免费本地体验' <<<"$public_home" >/dev/null
 
           config="$(curl "${retry[@]}" --fail "$PAGES_URL/config.js")"
           grep -F "$BACKEND_URL" <<<"$config" >/dev/null

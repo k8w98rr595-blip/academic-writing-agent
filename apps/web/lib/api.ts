@@ -84,7 +84,7 @@ export async function downloadExport(document: PaperDocument): Promise<void> {
   const url = URL.createObjectURL(blob);
   const link = window.document.createElement("a");
   link.href = url;
-  link.download = `${document.title.replace(/[^A-Za-z0-9_-]+/g, "-") || "paperlight"}.docx`;
+  link.download = `${document.title.replace(/[^\p{L}\p{N}_-]+/gu, "-") || "paperlight"}.docx`;
   link.click();
   URL.revokeObjectURL(url);
 }

@@ -14,6 +14,19 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+class UserAccount(Base):
+    __tablename__ = "user_accounts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    principal: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    recovery_hash: Mapped[str] = mapped_column(String(64))
+    terms_version: Mapped[str] = mapped_column(String(32))
+    provider_consent: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(), default=utcnow)
+
+
 class SessionRecord(Base):
     __tablename__ = "sessions"
 

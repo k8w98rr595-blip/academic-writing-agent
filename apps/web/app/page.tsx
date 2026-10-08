@@ -7,6 +7,9 @@ import { CreateDocument } from "@/components/CreateDocument";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Workspace } from "@/components/Workspace";
 import { BillingPanel } from "@/components/BillingPanel";
+import { PublicHome } from "@/components/PublicHome";
+import { PublicExperience } from "@/components/PublicExperience";
+import { AccountPanel } from "@/components/AccountPanel";
 
 export default function HomePage() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -16,6 +19,8 @@ export default function HomePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showBilling, setShowBilling] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const [publicView, setPublicView] = useState<"home" | "local" | "login">("home");
 
   const refreshList = useCallback(async (preferredId?: string) => {
     const payload = await api<{ documents: DocumentListItem[] }>("/api/v1/documents");
@@ -36,6 +41,9 @@ export default function HomePage() {
     refreshList().catch(() => {
       clearSession();
       setAuthenticated(false);
+      setPublicView("home");
+      setShowAccount(false);
+      setShowBilling(false);
     });
   }, [refreshList]);
 
@@ -89,10 +97,16 @@ export default function HomePage() {
     }
   }
 
-  if (!authenticated) return <LoginScreen busy={busy} error={error} onLogin={login} />;
-  const billing = showBilling ? <BillingPanel onClose={() => setShowBilling(false)} /> : null;
+  if (!authenticated) {
+    if (publicView === "local") return <PublicExperience onBack={() => setPublicView("home")} />;
+    if (publicView === "home") return <PublicHome onExperience={() => setPublicView("local")} onLogin={() => setPublicView("login")} />;
+    return <LoginScreen busy={busy} error={error} onLogin={login} onBack={() => setPublicView("home")} onRegistered={async token => {
+      storeSession(token); setAuthenticated(true); await refreshList();
+    }} />;
+  }
+  const billing = <>{showBilling ? <BillingPanel onClose={() => setShowBilling(false)} /> : null}{showAccount ? <AccountPanel onClose={() => setShowAccount(false)} onEnded={logout} /> : null}</>;
   if (showCreate || !activeDocument) {
-    return <><CreateDocument busy={busy} error={error} documents={documents} onCreate={createDocument} onOpen={(id) => refreshList(id)} onBilling={() => setShowBilling(true)} onLogout={logout} />{billing}</>;
+    return <><CreateDocument busy={busy} error={error} documents={documents} onCreate={createDocument} onOpen={(id) => refreshList(id)} onBilling={() => setShowBilling(true)} onAccount={() => setShowAccount(true)} onLogout={logout} />{billing}</>;
   }
   return (
     <><Workspace
@@ -104,6 +118,7 @@ export default function HomePage() {
       onNew={() => setShowCreate(true)}
       onDeleted={() => refreshList()}
       onBilling={() => setShowBilling(true)}
+      onAccount={() => setShowAccount(true)}
       onLogout={logout}
     />{billing}</>
   );

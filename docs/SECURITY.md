@@ -1,5 +1,11 @@
 # Security boundaries
 
+## Public-local release boundary — 2026-10-08
+
+The public browser-local experience is independent of authenticated cloud data and never uploads writing. Cloud registration and student real AI remain disabled. Student identity foundations use server-resolved principals, password-version-bound sessions, rotating hashed recovery codes, separate versioned provider consent and mandatory ownership checks for documents/versions/jobs/patches/export. Students never inherit disabled-billing owner privileges. Validation errors omit raw input, including passwords and recovery codes. Production public account endpoints require distributed Redis limits and PostgreSQL; failures are closed. See [Public launch gates](PUBLIC_LAUNCH.md) before activating any public cloud switch.
+
+All paid users share a PostgreSQL-serialized rolling budget in addition to individual provider caps. Worker paid reservations are claimed with conditional atomic UPDATE. These changes do not replace concurrency/load/Redis-failure acceptance before cloud launch. The table below describes the historical owner workflow; authenticated student Mock work uses the same resource ownership rules. Real student Provider work is additionally denied unless public-AI and separate consent gates pass. Owner TOTP remains unchanged; it is not a reusable student's credential.
+
 | Operation | Identity | Ownership/state rule | Input controls | Audit event |
 |---|---|---|---|---|
 | Login | Configured owner | Owner email only | Generic errors, Argon2id, password-hash-bound Session, rate limit; current stage is password-only | `auth.login` / `auth.failure` |

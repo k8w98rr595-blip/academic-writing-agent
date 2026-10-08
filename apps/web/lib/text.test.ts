@@ -19,6 +19,13 @@ describe("text helpers", () => {
     expect(countWords("One two\nthree")).toBe(3);
   });
 
+  it("maps API code-point offsets without splitting emoji or Chinese text", () => {
+    expect(splitHighlights("前😀风险后", [{ paragraphId: "p1", start: 2, end: 4, score: .8, confidence: .8, classification: "ai_assisted" }])).toEqual([
+      { text: "前😀" }, { text: "风险", classification: "ai_assisted" }, { text: "后" },
+    ]);
+    expect(splitHighlights("😀", [{ paragraphId: "p1", start: 0, end: 2, score: .8, confidence: .8, classification: "ai_assisted" }])).toEqual([{ text: "😀" }]);
+  });
+
   it("renders an actively edited paragraph as one plain text node", () => {
     const spans = [
       { paragraphId: "p1", start: 0, end: 5, score: 0.9, confidence: 0.9, classification: "ai_generated" as const },

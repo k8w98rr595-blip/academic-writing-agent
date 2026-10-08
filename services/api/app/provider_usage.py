@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session
 
 from .config import get_settings
@@ -86,11 +86,20 @@ def reserve_provider_calls(owner: str, provider: str, specs: list[ProviderCallSp
     retention_cutoff = now - timedelta(days=settings.provider_usage_retention_days)
     with session_scope() as db:
         if db.bind is not None and db.bind.dialect.name == "postgresql":
+            # Global lock precedes account locks: one budget across every tenant.
+            db.execute(text("SELECT pg_advisory_xact_lock(506170014293216801)"))
             # Serialize the owner's short quota transaction across API workers so
             # two simultaneous requests cannot both pass the count/duplicate gate.
             lock_value = int.from_bytes(hashlib.sha256(owner.encode("utf-8")).digest()[:8], "big", signed=True)
             db.execute(text("SELECT pg_advisory_xact_lock(:lock_value)"), {"lock_value": lock_value})
         db.execute(delete(ProviderUsageEvent).where(ProviderUsageEvent.created_at < retention_cutoff))
+        for cutoff, limit in ((one_hour_ago, settings.global_paid_hourly_limit), (one_day_ago, settings.global_paid_daily_limit)):
+            count = db.scalar(select(func.count(ProviderUsageEvent.id)).where(
+                ProviderUsageEvent.is_paid.is_(True), ProviderUsageEvent.status.in_(COUNTED_STATUSES),
+                ProviderUsageEvent.created_at >= cutoff,
+            )) or 0
+            if count + len(specs) > limit:
+                raise HTTPException(429, "网站调用额度已达到上限，请稍后再试")
         breaker_until = _breaker_until(db, owner, provider)
         if breaker_until:
             raise HTTPException(
@@ -212,11 +221,10 @@ def claim_provider_call(reservation_id: str) -> bool:
     """Claim a queued-worker reservation exactly once before outbound traffic."""
 
     with session_scope() as db:
-        event = db.get(ProviderUsageEvent, reservation_id)
-        if not event or event.status != "reserved":
-            return False
-        event.status = "in_progress"
-        return True
+        result = db.execute(update(ProviderUsageEvent).where(
+            ProviderUsageEvent.id == reservation_id, ProviderUsageEvent.status == "reserved",
+        ).values(status="in_progress"))
+        return result.rowcount == 1
 
 
 def finalize_provider_call(

@@ -9,10 +9,13 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
+from .accounts import router as account_router, limit_account_action, member_credentials, require_public_ai
 from .billing import (
     backfill_document_quotas,
     billing_summary,
@@ -35,7 +38,7 @@ from .billing import (
 from .billing_catalog import METER_DETECTION, METER_REWRITE
 from .database import get_db, init_db, session_scope
 from .documents import DOCX_MIME, build_docx, extract_docx_text, validate_docx_upload
-from .models import AnalysisRun, Document, DocumentVersion, JobRecord, PatchRecord, RewriteSession, SessionRecord, utcnow
+from .models import AnalysisRun, AuditEvent, Document, DocumentVersion, JobRecord, PatchRecord, RewriteSession, SessionRecord, utcnow
 from .providers import detection_content_fingerprint, propose_first_pass_rewrites, propose_rewrite, run_detection
 from .provider_usage import (
     ProviderCallSpec,
@@ -95,6 +98,16 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 MAX_AGENT_CONTEXT_CHARACTERS = 60_000
 app = FastAPI(title="Paperlight API", version="0.1.0", lifespan=lifespan, docs_url=None if settings.is_production else "/api/docs")
+app.include_router(account_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(_: Request, exception: RequestValidationError):
+    # Pydantic errors can contain raw passwords/recovery codes/paper text.
+    return JSONResponse(status_code=422, content={"detail": [
+        {"loc": list(error["loc"]), "type": error["type"], "msg": error["msg"]}
+        for error in exception.errors()
+    ]})
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.allowed_origins),
@@ -160,7 +173,7 @@ def health() -> dict:
 
 def _looks_like_heading(text: str) -> bool:
     stripped = text.strip()
-    return bool(stripped) and len(stripped) < 80 and not re.search(r"[.!?]$", stripped)
+    return bool(stripped) and len(stripped) < 80 and not re.search(r"[.!?。！？]$", stripped)
 
 
 def _agent_context(paragraphs: list[dict], paragraph_id: str, scope: str, confirmed: bool) -> str:
@@ -197,7 +210,7 @@ def _agent_context(paragraphs: list[dict], paragraph_id: str, scope: str, confir
 
 @app.get("/api/v1/auth/status")
 def auth_status() -> dict:
-    return {"configured": bool(settings.owner_password_hash and (settings.owner_totp_secret or not settings.require_totp)), "requiresTotp": settings.require_totp}
+    return {"configured": bool(settings.owner_password_hash and (settings.owner_totp_secret or not settings.require_totp)), "requiresTotp": settings.require_totp, "registrationEnabled": settings.public_registration_enabled}
 
 
 @app.post("/api/v1/auth/login", response_model=LoginResponse)
@@ -205,14 +218,20 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     key = client_key(request)
     if not login_limiter.allow(key):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many login attempts")
-    if not validate_owner_credentials(payload.email, payload.password, payload.totp_code):
+    if settings.public_registration_enabled:
+        limit_account_action(request, "login", 8)
+    if payload.email.strip().lower() == settings.owner_email:
+        principal = settings.owner_email if validate_owner_credentials(payload.email, payload.password, payload.totp_code) else None
+    else:
+        principal = member_credentials(db, payload.email, payload.password)
+    if not principal:
         audit(db, "anonymous", "auth.failure", ipHash=token_hash(key)[:16])
         db.commit()
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid owner credentials")
-    session_token, expires_at = create_session(db, settings.owner_email)
-    audit(db, settings.owner_email, "auth.login")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码无效")
+    session_token, expires_at = create_session(db, principal)
+    audit(db, principal, "auth.login")
     db.commit()
-    return LoginResponse(session_token=session_token, expires_at=expires_at.isoformat(), owner_email=settings.owner_email)
+    return LoginResponse(session_token=session_token, expires_at=expires_at.isoformat(), owner_email=principal)
 
 
 @app.post("/api/v1/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -243,6 +262,8 @@ def list_documents(owner: str = Depends(current_owner), db: Session = Depends(ge
 
 @app.get("/api/v1/provider-usage/summary", response_model=ProviderUsageSummaryResponse)
 def get_provider_usage_summary(owner: str = Depends(current_owner), db: Session = Depends(get_db)):
+    if owner != settings.owner_email:
+        raise HTTPException(403, "此页面仅供运营者查看")
     cleanup_provider_usage_events(db)
     summary = provider_usage_summary(db, owner)
     audit(db, owner, "provider.usage_viewed")
@@ -409,6 +430,7 @@ async def analyze_document(
     db: Session = Depends(get_db),
 ):
     require_entitlement(db, owner, "ai_detection")
+    require_public_ai(owner, settings.detector_mode)
     document = get_owned_document(db, owner, document_id)
     version = get_version(db, document)
     operation_seed = detection_content_fingerprint(version.paragraphs, settings.pangram_model)
@@ -529,6 +551,7 @@ async def first_pass_rewrite(
     db: Session = Depends(get_db),
 ):
     require_entitlement(db, owner, "agent_rewrite")
+    require_public_ai(owner, settings.rewrite_mode)
     document = get_owned_document(db, owner, document_id)
     if document.current_version_id != payload.version_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="First pass must use the current version")
@@ -716,6 +739,7 @@ async def rewrite_message(
     db: Session = Depends(get_db),
 ):
     require_entitlement(db, owner, "agent_rewrite")
+    require_public_ai(owner, settings.rewrite_mode)
     # Serialize proposals within one rewrite session so concurrent clicks cannot
     # create two independently pending successors. SQLite ignores this clause;
     # PostgreSQL enforces it in production.
@@ -947,7 +971,10 @@ def export_document(document_id: str, payload: ExportRequest | None = None, owne
     if payload and document.current_version_id != payload.expected_version_id:
         raise HTTPException(status_code=409, detail="文稿版本已变化，请刷新并确认后再导出。")
     version = get_version(db, document)
-    payload = build_docx(document.title, version.paragraphs, version.version_number)
+    accepted_ids = set(db.scalars(select(PatchRecord.id).where(PatchRecord.document_id == document.id, PatchRecord.status == "accepted")))
+    real_ai_used = any(event.details.get("patchId") in accepted_ids and event.details.get("mock") is False
+                       for event in db.scalars(select(AuditEvent).where(AuditEvent.resource_id == document.id, AuditEvent.action == "patch.proposed")))
+    payload = build_docx(document.title, version.paragraphs, version.version_number, ai_assisted=real_ai_used)
     safe_filename = re.sub(r"[^A-Za-z0-9_-]+", "-", document.title).strip("-")[:60] or "paperlight-document"
     audit(db, owner, "document.exported", document.id, versionId=version.id)
     db.commit()

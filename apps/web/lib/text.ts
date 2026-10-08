@@ -6,8 +6,12 @@ export const MAX_DOCUMENT_WORDS = 5000;
 export type HighlightChunk = { text: string; classification?: "ai_generated" | "ai_assisted" };
 
 export function splitHighlights(text: string, spans: EvidenceSpan[]): HighlightChunk[] {
+  // API ranges use Unicode code points (Python), not JS UTF-16 code units.
+  const offsets = [0];
+  for (const character of text) offsets.push(offsets[offsets.length - 1] + character.length);
   const normalized = spans
-    .filter((span) => span.start >= 0 && span.end > span.start && span.end <= text.length)
+    .filter((span) => Number.isInteger(span.start) && Number.isInteger(span.end) && span.start >= 0 && span.end > span.start && span.end < offsets.length)
+    .map(span => ({ ...span, start: offsets[span.start], end: offsets[span.end] }))
     .toSorted((left, right) => left.start - right.start || left.end - right.end);
   const chunks: HighlightChunk[] = [];
   let cursor = 0;
@@ -26,7 +30,16 @@ export function editableChunks(text: string, spans: EvidenceSpan[], editing: boo
 }
 
 export function countWords(text: string): number {
-  return text.trim() ? text.trim().split(/\s+/).length : 0;
+  return textMetrics(text).count;
+}
+
+export function textMetrics(text: string): { language: "zh" | "en"; count: number; unit: string; valid: boolean } {
+  const chinese = (text.match(/[\u3400-\u9fff]/g) || []).length;
+  const latin = (text.match(/[A-Za-z]/g) || []).length;
+  const words = (text.match(/[A-Za-z0-9_]+(?:[’'-][A-Za-z0-9_]+)*/g) || []).length;
+  const language = chinese > 0 && chinese >= latin / 3 ? "zh" : "en";
+  const count = language === "zh" ? chinese + words : words;
+  return { language, count, unit: language === "zh" ? "字/词" : "词", valid: count >= 500 && count <= (language === "zh" ? 12000 : 5000) && text.length <= 100000 };
 }
 
 export function documentText(paragraphs: Paragraph[]): string {

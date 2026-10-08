@@ -408,3 +408,53 @@ mark.evidence:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* Public experience is deliberately independent of authenticated AI services. */
+.public-shell { max-width: 1200px; margin: 0 auto; padding: 0 36px 36px; }
+.public-header { min-height: 96px; display: flex; justify-content: space-between; align-items: center; gap: 20px; border-bottom: 1px solid var(--line-strong); }
+.public-hero { padding: 86px 0 72px; max-width: 850px; }
+.public-hero h1 { font-size: clamp(34px, 5vw, 60px); line-height: 1.25; margin: 22px 0; letter-spacing: -.04em; }
+.public-hero p { max-width: 650px; font-size: 18px; line-height: 1.85; color: #555a56; }
+.public-hero small { display: block; margin-top: 20px; color: #555a56; }
+.public-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0; }
+.public-features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.public-features article { padding: 32px 26px 24px 0; }
+.public-features article + article { border-left: 1px solid var(--line); padding-left: 26px; }
+.public-features span { color: var(--accent); font-size: 12px; font-weight: 750; }
+.public-features h2 { font-size: 23px; margin: 18px 0; }
+.public-features p, .public-status p { color: #555a56; line-height: 1.85; }
+.public-status { padding: 38px 0; }
+.public-status h2 { font-size: 19px; }
+.public-footer { padding-top: 24px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 22px; color: var(--muted); font-size: 12px; }
+.public-footer > div { display: flex; flex-wrap: wrap; gap: 22px; }
+.public-footer button, .text-action { border: 0; background: transparent; padding: 4px 0; color: #454b46; text-decoration: underline; text-underline-offset: 4px; }
+.public-modal { width: min(700px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 32px; border: 1px solid var(--line-strong); background: var(--paper); color: var(--ink); }
+.public-modal::backdrop { background: rgba(10, 14, 11, .5); }
+.public-modal p { line-height: 1.85; overflow-wrap: anywhere; }
+.public-modal h2 { margin-top: 24px; }
+.local-intro { margin: 36px 0; max-width: 800px; }
+.local-intro p { line-height: 1.75; color: #555a56; }
+.local-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 30px; }
+.local-paper label { display: block; margin-bottom: 12px; font-weight: 750; }
+.local-paper textarea { width: 100%; min-height: 520px; padding: 24px; border: 1px solid var(--line-strong); background: var(--paper); resize: vertical; line-height: 1.9; }
+.local-results { min-width: 0; border: 1px solid var(--line); padding: 24px; background: var(--paper); }
+.local-results h2 { font-size: 21px; }
+.local-results p, .local-results li { line-height: 1.8; overflow-wrap: anywhere; }
+.local-results ul { padding-left: 20px; }
+.local-patch blockquote { margin: 12px 0 24px; padding-left: 14px; border-left: 3px solid var(--line-strong); line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.account-form { display: grid; gap: 14px; margin: 22px 0; }
+.account-form label { display: grid; gap: 8px; }
+.account-form input { width: 100%; padding: 10px; border: 1px solid var(--line-strong); }
+@media (max-width: 700px) {
+  .public-shell { padding: 0 20px 30px; }
+  .public-header { min-height: 80px; gap: 10px; }
+  .public-header strong { font-size: 14px; }
+  .public-header .button { padding: 0 12px; flex-shrink: 0; }
+  .public-hero { padding: 50px 0; }
+  .public-hero p { font-size: 16px; }
+  .public-features, .local-grid { grid-template-columns: minmax(0, 1fr); }
+  .public-features article + article { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; }
+  .local-paper textarea { min-height: 420px; padding: 16px; }
+  .public-modal { padding: 22px; }
+  .public-footer { flex-direction: column; }
+}

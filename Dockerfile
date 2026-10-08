@@ -14,7 +14,8 @@ RUN addgroup --system paperlight \
     && apt-get install --yes --no-install-recommends gosu \
     && rm -rf /var/lib/apt/lists/*
 COPY services/api/requirements.txt /app/services/api/requirements.txt
-RUN pip install --no-cache-dir -r /app/services/api/requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade "pip>=26.2" \
+    && pip install --no-cache-dir -r /app/services/api/requirements.txt
 COPY alembic.ini /app/alembic.ini
 COPY services /app/services
 COPY infra/docker-entrypoint.sh /usr/local/bin/paperlight-entrypoint

@@ -34,12 +34,15 @@ from fastapi.testclient import TestClient  # noqa: E402
 from services.api.app.database import Base, engine  # noqa: E402
 from services.api.app.main import app  # noqa: E402
 from services.api.app.security import login_limiter  # noqa: E402
+from services.api.app.accounts import account_limiter  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def clean_database():
     with login_limiter._lock:
         login_limiter._events.clear()
+    with account_limiter._lock:
+        account_limiter._events.clear()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     yield

@@ -76,6 +76,8 @@ export type VersionSummary = {
   id: string;
   number: number;
   wordCount: number;
+  language?: "zh" | "en";
+  unit?: string;
   source: string;
   createdAt: string;
 };

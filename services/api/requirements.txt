@@ -13,3 +13,7 @@ redis>=6,<7
 boto3>=1.39,<2
 alembic==1.19.1
 stripe==15.6.0
+# Security floors for transitive networking/XML dependencies.
+anyio>=4.14.2,<5
+lxml>=6.1.0,<7
+urllib3>=2.8.0,<3

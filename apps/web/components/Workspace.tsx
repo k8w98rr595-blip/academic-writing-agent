@@ -18,10 +18,11 @@ type Props = {
   onNew: () => void;
   onDeleted: () => void;
   onBilling: () => void;
+  onAccount: () => void;
   onLogout: () => void;
 };
 
-type Navigation = { kind: "open"; id: string } | { kind: "new" } | { kind: "logout" } | { kind: "billing" } | { kind: "restore"; version: VersionSummary };
+type Navigation = { kind: "open"; id: string } | { kind: "new" } | { kind: "logout" } | { kind: "billing" } | { kind: "account" } | { kind: "restore"; version: VersionSummary };
 
 type Confirmation =
   | { kind: "unsaved"; action: Navigation }
@@ -29,12 +30,12 @@ type Confirmation =
   | { kind: "restore"; version: VersionSummary };
 
 export function Workspace(props: Props) {
-  const { document, documents, onDocumentChange, onOpen, onNew, onDeleted, onBilling, onLogout } = props;
+  const { document, documents, onDocumentChange, onOpen, onNew, onDeleted, onBilling, onAccount, onLogout } = props;
   const [paragraphs, setParagraphs] = useState<Paragraph[]>(document.currentVersion.paragraphs);
   const [dirty, setDirty] = useState(false);
   const [tab, setTab] = useState<InspectorTab>(document.analysis ? "detection" : "agent");
   const [selection, setSelection] = useState({ paragraphId: paragraphs[0]?.id || "", text: "" });
-  const [instruction, setInstruction] = useState("Make this passage more specific, strengthen its reasoning, and connect evidence to the claim without changing its meaning.");
+  const [instruction, setInstruction] = useState("请保持原文语言、观点、数据和引用，改善表达清晰度、论证衔接与证据结合，不添加新事实。");
   const [rewriteSessionId, setRewriteSessionId] = useState(() => document.patches.find((patch) => patch.status === "pending")?.rewriteSessionId || "");
   const [pendingPatch, setPendingPatch] = useState<Patch | null>(() => document.patches.find((patch) => patch.status === "pending" && !patch.batch && patch.baseVersionId === document.currentVersion.id) || null);
   const [contextScope, setContextScope] = useState<AgentContextScope>("selection");
@@ -106,7 +107,7 @@ export function Workspace(props: Props) {
     setTab(document.analysis ? "detection" : "agent");
   }, [document.id]);
 
-  const outline = useMemo(() => paragraphs.filter((paragraph) => paragraph.text.length < 80 && !/[.!?]$/.test(paragraph.text)).slice(0, 12), [paragraphs]);
+  const outline = useMemo(() => paragraphs.filter((paragraph) => paragraph.text.length < 80 && !/[.!?。！？]$/.test(paragraph.text)).slice(0, 12), [paragraphs]);
 
   function updateParagraph(paragraphId: string, value: string) {
     draft.current = draft.current.map(paragraph => paragraph.id === paragraphId ? { ...paragraph, text: value } : paragraph);
@@ -146,6 +147,7 @@ export function Workspace(props: Props) {
     else if (action.kind === "new") onNew();
     else if (action.kind === "logout") await onLogout();
     else if (action.kind === "billing") onBilling();
+    else if (action.kind === "account") onAccount();
     else setConfirmation({ kind: "restore", version: action.version });
   }
 
@@ -375,12 +377,13 @@ export function Workspace(props: Props) {
 
       <section className="workspace-stage">
         <header className="workspace-header">
-          <div className="document-title-block"><h1>{document.title}</h1><div><span className="saved-state"><Save size={14} />{dirty ? "有未保存修改" : `版本 ${document.currentVersion.number} 已保存`}</span><span>{document.currentVersion.wordCount.toLocaleString()} 词</span></div></div>
+          <div className="document-title-block"><h1>{document.title}</h1><div><span className="saved-state"><Save size={14} />{dirty ? "有未保存修改" : `版本 ${document.currentVersion.number} 已保存`}</span><span>{document.currentVersion.wordCount.toLocaleString()} {document.currentVersion.unit || "词"}</span></div></div>
           <div className="header-actions"><button className="button secondary compact" onClick={() => openInspector("versions")}><FileClock size={17} />版本</button><button className="button secondary compact" disabled={busy} onClick={() => void run(exportDraft)}><Download size={17} />导出 DOCX</button><button className="button secondary compact desktop-only" onClick={remove} disabled={busy}><Trash2 size={17} />删除</button><button className="button primary compact" disabled={busy} onClick={() => navigate({ kind: "new" })}><Plus size={18} />新建文稿</button><details ref={mobileMenu} className="mobile-workspace-menu"><summary>更多</summary><div>
             <label>切换文稿<select aria-label="切换文稿" value={document.id} disabled={busy} onChange={event => navigate({ kind: "open", id: event.target.value })}>{documents.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
             <button className="mobile-menu-action" disabled={busy} onClick={() => void run(exportDraft)}>导出 DOCX</button>
             <button className="mobile-menu-action" disabled={busy} onClick={() => { mobileMenu.current?.removeAttribute("open"); openInspector("versions"); }}>查看版本</button>
             <button className="mobile-menu-action" disabled={busy} onClick={remove}>删除文稿</button>
+            <button className="mobile-menu-action" disabled={busy} onClick={() => navigate({ kind: "account" })}>账号设置</button>
             <button className="mobile-menu-action" disabled={busy} onClick={() => navigate({ kind: "logout" })}>退出登录</button>
           </div></details></div>
         </header>
@@ -389,14 +392,14 @@ export function Workspace(props: Props) {
           <aside className="document-rail">
             <div className="rail-section document-switcher"><div className="rail-heading"><span>文稿大纲</span><button disabled={busy} onClick={() => navigate({ kind: "new" })} title="新建文稿"><Plus size={17} /></button></div><label className="document-picker"><span className="visually-hidden">打开文稿</span><select value={document.id} disabled={busy} onChange={(event) => navigate({ kind: "open", id: event.target.value })}>{documents.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select><ChevronDown size={15} /></label></div>
             <div className="rail-section outline">{outline.length ? outline.map((item, index) => <button key={item.id} onClick={() => window.document.querySelector(`[data-paragraph-id="${item.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}><span>{String(index + 1).padStart(2, "0")}</span>{item.text}</button>) : <p>较短的标题会显示在这里。</p>}</div>
-            <div className="rail-footer"><span>自动删除：{new Date(document.expiresAt).toLocaleDateString()}</span><strong>{document.currentVersion.wordCount.toLocaleString()} 词</strong></div>
+            <div className="rail-footer"><span>自动删除：{new Date(document.expiresAt).toLocaleDateString()}</span><strong>{document.currentVersion.wordCount.toLocaleString()} {document.currentVersion.unit || "词"}</strong><button className="text-action" disabled={busy} onClick={() => navigate({ kind: "account" })}>账号设置</button></div>
           </aside>
 
           <section className="editor-region">
             {message ? <div className="workspace-message" role="status">{message}</div> : null}
             <div className="paper-scroller"><PaperEditor paragraphs={paragraphs} spans={spans} stale={stale} disabled={busy || Boolean(confirmation)} onParagraphChange={updateParagraph} onSelection={setSelection} onRiskSpan={reviewRiskSpan} /></div>
             <div className="editor-toolbar" aria-label="编辑器工具"><button title="撤销" disabled={busy} onPointerDown={event => event.preventDefault()} onClick={() => window.document.execCommand("undo")}><Undo2 size={17} /></button><button title="重做" disabled={busy} onPointerDown={event => event.preventDefault()} onClick={() => window.document.execCommand("redo")}><Redo2 size={17} /></button><span className="toolbar-separator" /><span className="toolbar-style">纯文本 · 不保留原排版</span>{dirty ? <><span className="toolbar-separator" /><button className="save-action" disabled={busy} onClick={() => void run(saveDraft)}><Save size={16} />保存版本</button></> : null}</div>
-            <footer className="editor-status"><span>英文课程论文</span><span>{!document.analysis ? "当前版本尚未检测" : stale ? "检测结果需要刷新" : "检测结果与当前版本一致"}</span></footer>
+            <footer className="editor-status"><span>中文与英文写作</span><span>{!document.analysis ? "当前版本尚未检测" : stale ? "检测结果需要刷新" : "检测结果与当前版本一致"}</span></footer>
           </section>
 
           <Inspector tab={tab} collapsed={inspectorCollapsed} onToggleCollapsed={() => setInspectorCollapsed((value) => !value)} document={{ ...document, analysis: document.analysis ? { ...document.analysis, isStale: stale } : null }} batchPatches={activeBatch} onBatchDecision={ids => void run(() => decideBatch(ids))} selectedText={selection.text} pendingPatch={pendingPatch} instruction={instruction} contextScope={contextScope} fullDocumentConfirmed={fullDocumentConfirmed} initialOneClickAvailable={initialOneClickAvailable} initialOneClickTargetText={initialOneClickTargetText} busy={busy} onTab={openInspector} onInstruction={setInstruction} onContextScope={changeContextScope} onFullDocumentConfirmed={setFullDocumentConfirmed} onAnalyze={() => void run(analyze)} onInitialOneClick={() => void run(initialOneClickRewrite)} onPropose={() => void run(propose)} onAccept={(patch) => void run(() => accept(patch))} onReject={(patch) => void run(() => reject(patch))} onRestore={restore} />

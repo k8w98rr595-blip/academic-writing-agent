@@ -43,7 +43,7 @@ function EditableParagraph({ paragraph, index, ...props }: Omit<Props, "paragrap
   function captureSelection() {
     props.onSelection({ paragraphId: paragraph.id, text: window.getSelection()?.toString().trim() || "" });
   }
-  const isHeading = paragraph.text.length < 80 && !/[.!?]$/.test(paragraph.text);
+  const isHeading = paragraph.text.length < 80 && !/[.!?。！？]$/.test(paragraph.text);
   return <p ref={ref} data-paragraph-id={paragraph.id} className={isHeading ? "paper-heading" : "paper-paragraph"}
     contentEditable={!props.disabled} suppressContentEditableWarning spellCheck role="textbox" aria-multiline="true"
     aria-readonly={props.disabled} aria-label={isHeading ? `Heading ${index + 1}` : `Paragraph ${index + 1}`}

@@ -106,12 +106,16 @@ def extract_docx_text(payload: bytes) -> str:
     return "\n\n".join(blocks)
 
 
-def build_docx(title: str, paragraphs: list[dict], version_number: int) -> bytes:
+def build_docx(title: str, paragraphs: list[dict], version_number: int, *, ai_assisted: bool = False) -> bytes:
     document = WordDocument()
     document.core_properties.title = title
     document.core_properties.subject = f"Paperlight version {version_number}"
     for paragraph in paragraphs:
         document.add_paragraph(str(paragraph["text"]))
+    if ai_assisted:
+        notice = "AI 辅助写作说明：本文件的写作过程中使用并接受过 AI 修改建议，请按课程要求披露并核验正文。"
+        document.sections[0].footer.paragraphs[0].text = notice
+        document.core_properties.comments = notice
     stream = io.BytesIO()
     document.save(stream)
     return stream.getvalue()

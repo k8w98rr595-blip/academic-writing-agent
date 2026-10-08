@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .database import get_db
-from .models import AuditEvent, SessionRecord
+from .models import AuditEvent, SessionRecord, UserAccount
 
 
 password_hasher = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=2)
@@ -110,11 +110,20 @@ def create_session(db: Session, owner_email: str) -> tuple[str, datetime]:
     record = SessionRecord(
         id=f"session_{secrets.token_hex(12)}",
         token_hash=token_hash(token),
-        owner_email=owner_session_identity(),
+        owner_email=session_identity(db, owner_email),
         expires_at=expires_at,
     )
     db.add(record)
     return token, expires_at
+
+
+def session_identity(db: Session, principal: str) -> str:
+    if principal == get_settings().owner_email:
+        return owner_session_identity()
+    user = db.scalar(select(UserAccount).where(UserAccount.principal == principal))
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return f"member:{user.id}#{token_hash(user.password_hash)[:16]}"
 
 
 def validate_owner_credentials(email: str, password: str, totp_code: str) -> bool:
@@ -152,8 +161,16 @@ def current_owner(
     if not session or session.expires_at <= utcnow():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     settings = get_settings()
-    if session.owner_email != owner_session_identity():
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+    if session.owner_email.startswith("member:"):
+        user_id = session.owner_email.split("#", 1)[0].removeprefix("member:")
+        user = db.get(UserAccount, user_id)
+        if not user or session.owner_email != session_identity(db, user.principal):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        principal = user.principal
+    else:
+        if session.owner_email != owner_session_identity():
+            raise HTTPException(status_code=401, detail="Authentication required")
+        principal = settings.owner_email
     session.last_seen_at = utcnow()
     db.commit()
-    return settings.owner_email
+    return principal

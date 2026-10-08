@@ -7,8 +7,8 @@ import "@fontsource/source-serif-4/700.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Paperlight — Academic Writing Agent",
-  description: "Owner-controlled academic writing review and revision workspace",
+  title: "Paperlight · 中文与英文学生写作工作台",
+  description: "面向学生的中文与英文写作自检、作者审阅修改与版本工作台。公开本地体验无需上传文稿。",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

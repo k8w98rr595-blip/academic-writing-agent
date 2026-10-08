@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -88,6 +89,14 @@ class Settings:
     stripe_secret_key: str
     stripe_webhook_secret: str
     stripe_pro_monthly_price_id: str
+    public_registration_enabled: bool
+    public_ai_enabled: bool
+    public_launch_acknowledged: bool
+    operator_name: str
+    support_email: str
+    public_max_accounts: int
+    global_paid_hourly_limit: int
+    global_paid_daily_limit: int
 
     @property
     def is_production(self) -> bool:
@@ -161,7 +170,24 @@ def get_settings() -> Settings:
         stripe_secret_key=os.getenv("STRIPE_SECRET_KEY", ""),
         stripe_webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET", ""),
         stripe_pro_monthly_price_id=os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID", "").strip(),
+        public_registration_enabled=_bool("PUBLIC_REGISTRATION_ENABLED", False),
+        public_ai_enabled=_bool("PUBLIC_AI_ENABLED", False),
+        public_launch_acknowledged=_bool("PUBLIC_LAUNCH_ACKNOWLEDGED", False),
+        operator_name=os.getenv("PAPERLIGHT_OPERATOR_NAME", "").strip(),
+        support_email=os.getenv("PAPERLIGHT_SUPPORT_EMAIL", "").strip(),
+        public_max_accounts=int(os.getenv("PUBLIC_MAX_ACCOUNTS", "200")),
+        global_paid_hourly_limit=int(os.getenv("GLOBAL_PAID_HOURLY_LIMIT", "20")),
+        global_paid_daily_limit=int(os.getenv("GLOBAL_PAID_DAILY_LIMIT", "50")),
     )
+    if not 1 <= settings.public_max_accounts <= 10000:
+        raise RuntimeError("Public account capacity is invalid")
+    if not 1 <= settings.global_paid_hourly_limit <= settings.global_paid_daily_limit <= 10000:
+        raise RuntimeError("Global provider limits are invalid")
+    if settings.public_registration_enabled or settings.public_ai_enabled:
+        if not settings.public_launch_acknowledged or not settings.operator_name or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", settings.support_email):
+            raise RuntimeError("Public cloud services require launch review and operator/contact information")
+        if settings.is_production and (not settings.database_url.startswith(("postgresql", "postgres://")) or not settings.redis_url):
+            raise RuntimeError("Public cloud services require PostgreSQL and distributed rate limiting")
     if settings.app_env == "local-staging":
         from .staging_guard import validate_local_staging
 

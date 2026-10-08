@@ -85,7 +85,7 @@ def ensure_billing_account(db: Session, owner_email: str) -> BillingAccount:
         _expire_grace_if_needed(account)
         return account
     settings = get_settings()
-    initial_plan = settings.billing_disabled_plan if settings.billing_mode == "disabled" else "free"
+    initial_plan = settings.billing_disabled_plan if settings.billing_mode == "disabled" and normalized == settings.owner_email else "free"
     account = BillingAccount(
         id=_id("billing_account"),
         owner_email=normalized,
@@ -259,7 +259,7 @@ def enforce_document_capacity(
     additional_storage_bytes: int = 0,
 ) -> None:
     account = _locked_billing_account(db, owner_email)
-    if get_settings().billing_mode == "disabled":
+    if get_settings().billing_mode == "disabled" and owner_email == get_settings().owner_email:
         return
     plan = get_plan(account.plan_key)
     documents, storage = _capacity_usage(db, owner_email)
@@ -271,7 +271,7 @@ def enforce_document_capacity(
 
 def require_entitlement(db: Session, owner_email: str, feature: str) -> None:
     account = ensure_billing_account(db, owner_email)
-    plan_key = get_settings().billing_disabled_plan if get_settings().billing_mode == "disabled" else account.plan_key
+    plan_key = get_settings().billing_disabled_plan if get_settings().billing_mode == "disabled" and owner_email == get_settings().owner_email else account.plan_key
     plan = get_plan(plan_key)
     if plan.entitlements.get(feature) is True:
         return
@@ -322,7 +322,7 @@ def reserve_product_usage(owner_email: str, meter: str, idempotency_key: str, qu
                 )
             plan = get_plan(account.plan_key)
             used = _meter_usage(db, owner_email, meter)
-            if get_settings().billing_mode != "disabled" and used + quantity > plan.quotas[meter]:
+            if (get_settings().billing_mode != "disabled" or owner_email != get_settings().owner_email) and used + quantity > plan.quotas[meter]:
                 _quota_error(db, owner_email, meter, used, plan.quotas[meter])
             existing.status = "reserved"
             existing.quantity = quantity
@@ -332,7 +332,7 @@ def reserve_product_usage(owner_email: str, meter: str, idempotency_key: str, qu
             return existing.id
         plan = get_plan(account.plan_key)
         used = _meter_usage(db, owner_email, meter)
-        if get_settings().billing_mode != "disabled" and used + quantity > plan.quotas[meter]:
+        if (get_settings().billing_mode != "disabled" or owner_email != get_settings().owner_email) and used + quantity > plan.quotas[meter]:
             _quota_error(db, owner_email, meter, used, plan.quotas[meter])
         reservation = ProductUsageReservation(
             id=_id("quota"),
@@ -412,7 +412,7 @@ def claim_product_usage(reservation_id: str, job_id: str, db: Session) -> bool:
 
 def billing_summary(db: Session, owner_email: str) -> dict:
     account = ensure_billing_account(db, owner_email)
-    effective_plan_key = get_settings().billing_disabled_plan if get_settings().billing_mode == "disabled" else account.plan_key
+    effective_plan_key = get_settings().billing_disabled_plan if get_settings().billing_mode == "disabled" and owner_email == get_settings().owner_email else account.plan_key
     plan = get_plan(effective_plan_key)
     documents, storage = _capacity_usage(db, owner_email)
     usage = {

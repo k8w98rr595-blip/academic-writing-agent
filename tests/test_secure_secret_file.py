@@ -18,8 +18,7 @@ def test_secure_write_text_replaces_content_without_inherited_permissions(tmp_pa
             ["icacls", str(target)],
             check=True,
             capture_output=True,
-            text=True,
         ).stdout
-        assert "(I)" not in acl
+        assert b"(I)" not in acl
     else:
         assert stat.S_IMODE(target.stat().st_mode) == 0o600
