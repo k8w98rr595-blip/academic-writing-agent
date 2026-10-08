@@ -9,7 +9,7 @@
 | 检查 | 结果与边界 |
 |---|---|
 | Python全套 | 215项通过；含新增24项公众门控、身份隔离、恢复/注销、中文闭环和费用回归；未调用真实Provider |
-| 前端单元/SSR | 27项通过，含新增本地规则、中文计数、Unicode高亮及公开文案边界 |
+| 前端单元/SSR | 28项通过，含新增本地规则、中文计数、Unicode高亮、公开文案边界及后端域名不可用提示 |
 | Node发布/扫描脚本 | 12项通过 |
 | TypeScript | 通过 |
 | Next.js静态构建 | 15.5.27，真实生产API地址和Pages子路径构建通过；随后恢复源代码中的占位config.js |
@@ -29,6 +29,10 @@
 ## 生产验收边界
 
 发布前本机Pages/GitHub检查通过，但Railway域名TLS连接中断；不能从连接失败推断余额、故障原因或生产模式，也不能沿用历史成功记录当作本轮通过。提交/推送后按同一SHA核对Pages、Railway commit status和Production smoke，另从真实Pages跑匿名本地体验。本文件不把预发布测试当作实际部署成功，最终交付须给出具体发布证据和任何未通过项。
+
+首次代码提交`b126abbe481db65316808856fdd00c181b75f7f3`的[Pages 37778544545](https://github.com/k8w98rr595-blip/academic-writing-agent/actions/runs/37778544545)及[隔离staging 37778544533](https://github.com/k8w98rr595-blip/academic-writing-agent/actions/runs/37778544533)成功，包括CI依赖审计、测试、构建和扫描；[Production smoke 37778781351](https://github.com/k8w98rr595-blip/academic-writing-agent/actions/runs/37778781351)失败，不隐瞒为绿色。随后匿名直接核验健康、登录状态、公开配置三个API路径均返回404，响应server为railway-hikari，JSON message为Application not found。这是现有域名的应用路由不可用证据，不能据此断言是余额、服务删除或代码错误。新提交尚无Railway成功commit status，浏览器连接控制台中断，无法安全触发/确认部署。
+
+为隔离这个阻塞，公开首页停止请求云端配置，继续清楚标明公众云端关闭；本地体验不依赖Railway。现有所有者云端目前不可确认可用，注册/真实AI不应开放。需要所有者在Railway的academic-writing-agent项目确认api服务/Deployment/Networking，发布最新main并确认Production Domain；若域名改变，更新GitHub Actions的公共变量PAPERLIGHT_API_BASE_URL后重新发布Pages。不要复制、显示或修改Key；公众开关继续0。恢复后重跑Smoke和401/CORS/健康检查，任何真实Provider验收仍须单独付费授权。
 
 新增Production smoke检查公开首页和 `/api/v1/public/config`，默认要求registrationEnabled=false、publicAiEnabled=false、localExperienceAvailable=true，同时保留401、CORS、Provider模式等原有验证。Smoke不创建文稿、不登录、不调用付费Provider，也不证明公众云端合规和国内各学校网络可达。
 

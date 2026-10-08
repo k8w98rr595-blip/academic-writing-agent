@@ -17,6 +17,14 @@ describe("version-bound Word export", () => {
 });
 
 describe("local staging isolation", () => {
+  it("explains a missing deployment without presenting it as a password failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: "Application not found" }), {
+      status: 404, headers: { "Content-Type": "application/json" },
+    })));
+    vi.stubGlobal("sessionStorage", { getItem: () => null });
+    vi.stubGlobal("window", { PAPERLIGHT_CONFIG: { apiBaseUrl: "https://backend.invalid" } });
+    await expect(api("/api/v1/auth/status")).rejects.toThrow("云端服务当前不可用");
+  });
   it("refuses a production API before issuing any request", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);

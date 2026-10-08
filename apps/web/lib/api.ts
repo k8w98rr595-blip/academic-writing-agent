@@ -60,7 +60,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
       ? String(detail.message)
       : typeof detail === "string"
         ? detail
-        : `Request failed (${response.status})`;
+        : payload?.message === "Application not found"
+          ? "云端服务当前不可用，请返回首页使用本地体验；运营者需检查后端部署与域名。"
+          : `请求未完成（${response.status}），请稍后重试。`;
     const code = typeof detail === "object" && detail?.code ? String(detail.code) : "";
     throw new ApiError(message, response.status, code);
   }

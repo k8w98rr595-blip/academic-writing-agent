@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
 
 export type PublicConfig = { registrationEnabled: boolean; publicAiEnabled: boolean; termsVersion: string; operator: string; supportEmail: string; retentionDays: number };
 
 export function PublicHome({ onExperience, onLogin }: { onExperience: () => void; onLogin: () => void }) {
-  const [config, setConfig] = useState<PublicConfig | null>(null);
+  // Publication policy, not a live backend status. Cloud activation requires
+  // updating the public operator/contact disclosures as well as backend gates.
+  const config: PublicConfig = { registrationEnabled: false, publicAiEnabled: false, termsVersion: "2026-10-08", operator: "", supportEmail: "", retentionDays: 7 };
   const [info, setInfo] = useState<"privacy" | "terms" | "help" | null>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => { if (info) dialog.current?.showModal(); }, [info]);
-  useEffect(() => { api<PublicConfig>("/api/v1/public/config").then(setConfig).catch(() => setConfig(null)); }, []);
   return <main className="public-shell">
     <header className="public-header"><div className="brand-lockup"><span className="brand-mark">P</span><strong>Paperlight</strong></div><button className="button secondary" onClick={onLogin}>登录工作台</button></header>
     <section className="public-hero"><span className="eyebrow">面向中文与英文学生写作</span><h1>把想法写清楚，<br />把修改握在自己手里。</h1><p>从课程报告到论文草稿，检查表达、审阅修改、保留版本。先用本地体验熟悉流程，文稿留在你的浏览器里。</p><div className="public-actions"><button className="button primary" onClick={onExperience}>免费本地体验</button><button className="button secondary" onClick={onLogin}>{config?.registrationEnabled ? "注册学生账号" : "已有账号登录"}</button></div><small>本地体验无需账号、无需上传，没有模型调用费用。</small></section>
